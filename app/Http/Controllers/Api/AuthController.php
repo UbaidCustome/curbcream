@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Product;
 use App\Traits\ApiResponser;
 use Illuminate\Container\Attributes\Auth;
 use Illuminate\Support\Facades\Auth as AuthFacade;
@@ -365,5 +366,121 @@ class AuthController extends Controller
             'message' => 'User retrieved successfully',
             'data' => $user,
         ]);
-    } 
+    }
+    public function addProduct(Request $request) {
+        // Logic to add a product
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'price' => 'required|numeric|regex:/^\d{1,6}(\.\d{1,2})?$/',
+            'images' => 'required|array',
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',  // Validate each image
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => 0,
+                'message' => $validator->errors()->first(),
+            ], 400); // Bad Request
+        }
+        $imagePaths = [];
+        if ($request->hasFile('images')) {
+            foreach ($request->file('images') as $image) {
+                $imagePaths[] = $image->store('products', 'public');  // Store images in 'products' folder
+            }
+        }
+        $product = Product::create([
+            'name' => $request->name,
+            'price' => $request->price,
+            'images' => $imagePaths,  // Save image paths as an array
+            'user_id' => AuthFacade::id(),  // Get the authenticated user ID
+        ]);
+        return response()->json([
+            'success' => 1,
+            'message' => 'Product added successfully',
+            'data' => $product,
+        ], 201);  // Created        
+    }
+    public function allProducts() {
+        // Logic to get all products
+        $products = Product::all();
+        return response()->json([
+            'success' => 1,
+            'message' => 'Products retrieved successfully',
+            'data' => $products,
+        ]);
+    }
+    public function getProduct($id) {
+        // Logic to get a product by ID 
+        $product = Product::find($id);
+        if (!$product) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Product not found',
+            ], 404); // Not Found
+        }
+        return response()->json([
+            'success' => 1,
+            'message' => 'Product retrieved successfully',
+            'data' => $product,
+        ]);
+    }
+    public function updateProduct(Request $request, $id) {
+        // Logic to update a product
+        // return $request;
+        $product = Product::find($id);
+        if (!$product) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Product not found',
+            ], 404); // Not Found
+        }
+        $validator = Validator::make($request->all(), [
+            'name' => 'sometimes|required|string|max:255',
+            'price' => 'sometimes|required|numeric|regex:/^\d{1,6}(\.\d{1,2})?$/',
+            'images' => 'sometimes|required|array',
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',  // Validate each image
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => 0,
+                'message' => $validator->errors()->first(),
+            ], 400); // Bad Request
+        }
+        if ($request->has('name')) {
+            $product->name = $request->name;
+        }
+        if ($request->has('price')) {
+            $product->price = $request->price;
+        }
+        if ($request->hasFile('images')) {
+            $imagePaths = [];
+            
+            // Delete existing images first
+            if ($product->images) {
+                foreach ($product->images as $existingImagePath) {
+                    // Full path to the image in storage
+                    $existingImageFullPath = storage_path('app/public/' . $existingImagePath);
+
+                    // Check if file exists and delete it
+                    if (file_exists($existingImageFullPath)) {
+                        unlink($existingImageFullPath);  // Delete the old image
+                    }
+                }
+            }
+
+            // Store new images and add them to the product's image paths array
+            foreach ($request->file('images') as $image) {
+                $imagePaths[] = $image->store('products', 'public');  // Store images in 'products' folder
+            }
+
+            // Update the product's images with new ones
+            $product->images = $imagePaths;
+        }
+        $product->save();
+        return response()->json([
+            'success' => 1,
+            'message' => 'Product updated successfully',
+            'data' => $product,
+        ]);
+
+    }
 }

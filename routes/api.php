@@ -24,6 +24,12 @@ Route::prefix('auth')->group(function () {
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('update-profile', [AuthController::class, 'updateProfile']);
         Route::post('update-password', [AuthController::class, 'changePassword']);
+
+        Route::post('add-product', [AuthController::class, 'addProduct']);
+        Route::get('all-products', [AuthController::class, 'allProducts']);
+        Route::get('get-product/{id}', [AuthController::class, 'getProduct']);
+        Route::put('update-product/{id}', [AuthController::class, 'updateProduct']);
+        Route::post('delete-product/{id}', [AuthController::class, 'deleteProduct']);
     });
 });
     
