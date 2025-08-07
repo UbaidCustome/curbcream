@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Product;
+use App\Models\Content;
 use App\Traits\ApiResponser;
 use Illuminate\Container\Attributes\Auth;
 use Illuminate\Support\Facades\Auth as AuthFacade;
@@ -17,23 +18,18 @@ class AuthController extends Controller
     use ApiResponser;
 
     public function signup(Request $request) {
-        // Validate input with custom error handling
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|unique:users',
             'password' => 'required|min:6|confirmed',
             'role' => 'required|in:user,driver',
         ]);
 
-        // Check if the validation failed
         if ($validator->fails()) {
-            // Get the first error message
             $error = $validator->errors()->first();
 
-            // Return response with only the first error message
             return $this->errorResponse($error, 400); // Bad Request
         }
 
-        // If validation passes, create the user
         $user = User::create([
             'email' => $request->email,
             'password' => bcrypt($request->password),
@@ -52,29 +48,25 @@ class AuthController extends Controller
         ]);
     }
     public function login(Request $request) {
-        // Validate input with custom error handling
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
             'password' => 'required|min:6',
         ]);
 
-        // Check if the validation failed
         if ($validator->fails()) {
-            // Get the first error message
             $error = $validator->errors()->first();
 
-            // Return response with only the first error message
             return response()->json([
                 'success' => 0,
                 'message' => $error,
-            ], 400); // Bad Request
+            ], 400);
         }
         $user = User::where('email', $request->email)->first();
         if (!$user || !password_verify($request->password, $user->password)) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Invalid credentials',
-            ], 401); // Unauthorized
+            ], 401);
         }
         $token = $user->createToken('curbcream')->plainTextToken;
         return response()->json([
@@ -87,7 +79,6 @@ class AuthController extends Controller
         ]);
     }
     public function sendOtp(Request $request) {
-        // Logic to send OTP
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|exists:users,email',
         ]);
@@ -95,7 +86,7 @@ class AuthController extends Controller
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
-            ], 400); // Bad Request
+            ], 400);
         }
         $user = User::where('email', $request->email)->first();
         // $otp = rand(100000, 999999);
@@ -103,16 +94,13 @@ class AuthController extends Controller
         $user->otp = $otp;
         $user->otp_expires_at = now()->addMinutes(10);
         $user->save();
-        // return $user;
         // Mail::to($user->email)->send(new \App\Mail\SendOtpMail($otp));
-        // return $otp;
         return response()->json([
             'success' => 1,
             'message' => 'OTP sent successfully',
         ]);
     }
     public function verifyOtp(Request $request) {
-        // Logic to verify OTP
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|exists:users,email',
             'otp' => 'required|digits:6',
@@ -121,14 +109,14 @@ class AuthController extends Controller
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
-            ], 400); // Bad Request
+            ], 400);
         }
         $user = User::where('email', $request->email)->first();
         if (!$user || $user->otp !== $request->otp || now()->greaterThan($user->otp_expires_at)) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Invalid or expired OTP',
-            ], 400); // Bad Request
+            ], 400);
         }
         $user->otp = null;
         $user->otp_expires_at = null;
@@ -145,7 +133,6 @@ class AuthController extends Controller
         ]);
     }
     public function resendOtp(Request $request) {
-        // Logic to resend OTP
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|exists:users,email',
         ]);
@@ -153,7 +140,7 @@ class AuthController extends Controller
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
-            ], 400); // Bad Request
+            ], 400);
         }
         $user = User::where('email', $request->email)->first();
         // $otp = rand(100000, 999999);
@@ -168,7 +155,6 @@ class AuthController extends Controller
         ]);
     }
     public function forgotPassword(Request $request) {
-        // Logic to handle forgot password
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|exists:users,email',
         ]);
@@ -176,7 +162,7 @@ class AuthController extends Controller
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
-            ], 400); // Bad Request
+            ], 400);
         }
         $user = User::where('email', $request->email)->first();
         // $resetToken = Str::random(6);
@@ -185,7 +171,6 @@ class AuthController extends Controller
         $user->otp_expires_at = now()->addMinutes(30);
         $user->save();
         // Mail::to($user->email)->send(new \App\Mail\SendOtpMail($otp));
-        // Here you would send the reset token to the user's email
         return response()->json([
             'success' => 1,
             'message' => 'Otp sent to your email',
@@ -195,7 +180,6 @@ class AuthController extends Controller
         ]);
     }
     public function resetPassword(Request $request) {
-        // Logic to reset password
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|exists:users,email',
             'password' => 'required|min:6|confirmed',
@@ -204,14 +188,14 @@ class AuthController extends Controller
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
-            ], 400); // Bad Request
+            ], 400);
         }
         $user = User::where('email', $request->email)->first();
         if (!$user || $user->otp !== $request->otp || now()->greaterThan($user->otp_expires_at)) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Invalid or expired otp',
-            ], 400); // Bad Request
+            ], 400);
         }
         $user->password = bcrypt($request->password);
         $user->password_reset_token = null;
@@ -224,7 +208,6 @@ class AuthController extends Controller
         ]);
     }
     public function updateProfile(Request $request) {
-        // Logic to update user profile
         $authId = AuthFacade::user()->id;
         $user = User::where('id', $authId)->first();
         if (!$user) {
@@ -256,7 +239,6 @@ class AuthController extends Controller
                 'message' => $validator->errors()->first(),
             ], 400);
         }
-        // Update user profile fields
         if($user->role == 'user'){
             $user->first_name = $request->first_name ?? $user->first_name;
             $user->last_name = $request->last_name ?? $user->last_name;
@@ -299,18 +281,23 @@ class AuthController extends Controller
             if ($request->hasFile('insurence_card')) {
                 $avatarPath = $request->file('insurence_card')->store('driver/documents', 'public');
                 $user->insurence_card = $avatarPath; // Assuming you have an 'avatar' column
-            }            
+            }
+            $user->save();
+            return response()->json([
+                'success' => 1,
+                'message' => 'Profile updated successfully',
+                'data' => $user,
+            ]);
         }
     }
     public function changePassword(Request $request) {
-        // Logic to change user password
         $id = AuthFacade::user()->id;
         $user = User::find($id);
         if (!$user) {
             return response()->json([
                 'success' => 0,
                 'message' => 'User not authenticated',
-            ], 401); // Unauthorized
+            ], 401);
         }
         $validator = Validator::make($request->all(), [
             'current_password' => 'required|min:6',
@@ -320,13 +307,13 @@ class AuthController extends Controller
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
-            ], 400); // Bad Request
+            ], 400);
         }
         if (!password_verify($request->current_password, $user->password)) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Current password is incorrect',
-            ], 400); // Bad Request
+            ], 400);
         }
         $user->password = bcrypt($request->new_password);
         $user->save();
@@ -336,21 +323,20 @@ class AuthController extends Controller
         ]);
     }
     public function logout(Request $request) {
-        $user = $request->user();
+        $user = AuthFacade::user();
         if(!$user) {
             return response()->json([
                 'success' => 0,
                 'message' => 'User not authenticated',
-            ], 401); // Unauthorized
+            ], 401);
         }
-        $user->tokens()->delete(); // Revoke all tokens for the user
+        $user->tokens()->delete();
         return response()->json([
             'success' => 1,
             'message' => 'Logged out successfully',
         ]);
     }
     public function allUsers(Request $request) {
-        // Return all users
         $users = User::all();
         return response()->json([
             'success' => 1,
@@ -359,13 +345,12 @@ class AuthController extends Controller
         ]);
     }
     public function getUser($id) {
-        // Return user by ID
         $user = User::find($id);
         if (!$user) {
             return response()->json([
                 'success' => 0,
                 'message' => 'User not found',
-            ], 404); // Not Found
+            ], 404);
         }
         return response()->json([
             'success' => 1,
@@ -374,7 +359,6 @@ class AuthController extends Controller
         ]);
     }
     public function addProduct(Request $request) {
-        // Logic to add a product
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'price' => 'required|numeric|regex:/^\d{1,6}(\.\d{1,2})?$/',
@@ -385,7 +369,7 @@ class AuthController extends Controller
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
-            ], 400); // Bad Request
+            ], 400);
         }
         $imagePaths = [];
         if ($request->hasFile('images')) {
@@ -396,8 +380,8 @@ class AuthController extends Controller
         $product = Product::create([
             'name' => $request->name,
             'price' => $request->price,
-            'images' => $imagePaths,  // Save image paths as an array
-            'user_id' => AuthFacade::id(),  // Get the authenticated user ID
+            'images' => $imagePaths,
+            'user_id' => AuthFacade::id(),
         ]);
         return response()->json([
             'success' => 1,
@@ -406,7 +390,6 @@ class AuthController extends Controller
         ], 201);  // Created        
     }
     public function allProducts() {
-        // Logic to get all products
         $products = Product::all();
         return response()->json([
             'success' => 1,
@@ -415,13 +398,12 @@ class AuthController extends Controller
         ]);
     }
     public function getProduct($id) {
-        // Logic to get a product by ID 
         $product = Product::find($id);
         if (!$product) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Product not found',
-            ], 404); // Not Found
+            ], 404);
         }
         return response()->json([
             'success' => 1,
@@ -430,26 +412,24 @@ class AuthController extends Controller
         ]);
     }
     public function updateProduct(Request $request, $id) {
-        // Logic to update a product
-        // return $request;
         $product = Product::find($id);
         if (!$product) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Product not found',
-            ], 404); // Not Found
+            ], 404);
         }
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'price' => 'sometimes|required|numeric|regex:/^\d{1,6}(\.\d{1,2})?$/',
             'images' => 'sometimes|required|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',  // Validate each image
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ]);
         if ($validator->fails()) {
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
-            ], 400); // Bad Request
+            ], 400);
         }
         if ($request->has('name')) {
             $product->name = $request->name;
@@ -460,25 +440,20 @@ class AuthController extends Controller
         if ($request->hasFile('images')) {
             $imagePaths = [];
             
-            // Delete existing images first
             if ($product->images) {
                 foreach ($product->images as $existingImagePath) {
-                    // Full path to the image in storage
                     $existingImageFullPath = storage_path('app/public/' . $existingImagePath);
 
-                    // Check if file exists and delete it
                     if (file_exists($existingImageFullPath)) {
-                        unlink($existingImageFullPath);  // Delete the old image
+                        unlink($existingImageFullPath);
                     }
                 }
             }
 
-            // Store new images and add them to the product's image paths array
             foreach ($request->file('images') as $image) {
-                $imagePaths[] = $image->store('products', 'public');  // Store images in 'products' folder
+                $imagePaths[] = $image->store('products', 'public');
             }
 
-            // Update the product's images with new ones
             $product->images = $imagePaths;
         }
         $product->save();
@@ -490,13 +465,12 @@ class AuthController extends Controller
 
     }
     public function getProductsByUser($userId) {
-        // Logic to get products by user ID
         $products = Product::where('user_id', $userId)->get();
         if ($products->isEmpty()) {
             return response()->json([
                 'success' => 0,
                 'message' => 'No products found for this user',
-            ], 404); // Not Found
+            ], 404);
         }
         return response()->json([
             'success' => 1,
@@ -505,28 +479,110 @@ class AuthController extends Controller
         ]);
     }
     public function deleteProduct($id) {
-        // Logic to delete a product
-        // return $id;
         $product = Product::find($id);
         if (!$product) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Product not found',
-            ], 404); // Not Found 
+            ], 404);
         }
-        // Delete product images from storage
         if ($product->images) {
             foreach ($product->images as $imagePath) {
                 $imageFullPath = storage_path('app/public/' . $imagePath);
                 if (file_exists($imageFullPath)) {
-                    unlink($imageFullPath);  // Delete the image file 
+                    unlink($imageFullPath); 
                 }
             }
         }
-        $product->delete(); // Delete the product from the database
+        $product->delete();
         return response()->json([
             'success' => 1,
             'message' => 'Product deleted successfully',
         ]);
-    }            
+    }    
+    public function page($slug)
+    {
+        try {
+            $page = Content::select('id','type','description')->where('type', $slug)->get();
+            if(count($page)>0){
+              
+                return response()->json([
+                    'success' => 1,
+                    'message' => 'Data retrieved successfully',
+                    'data' => $page,
+                ]);
+            }
+            else{
+                return response()->json([
+                    'success' => 0,
+                    'message' => 'No data found',
+                ], 404);
+            }
+        }  catch (\Exception $e) {
+            return $this->respondInternalError('An error occurred: ' . $e->getMessage());
+        }
+    }
+
+    public function deleteAccount(Request $request)
+    {
+        try {
+            $user = AuthFacade::user();
+            $user->products()->delete();
+    
+            $user->delete();
+    
+            return response()->json([
+                'status' => 1,
+                'message' => 'Account deleted successfully',
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'An error occurred: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+    public function toggleActive(Request $request)
+    {
+        try {
+            $user = AuthFacade::user();
+
+            $user->is_active = !$user->is_active;
+
+            $user->save();
+            return response()->json([
+                'status' => 1,
+                'message' => 'Account status updated',
+                'is_active' => $user->is_active,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'An error occurred: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function toggleNotification(Request $request)
+    {
+        try {
+            $user = AuthFacade::user();
+
+            $user->is_notification = !$user->is_notification;
+
+            $user->save();
+
+            return response()->json([
+                'status' => 1,
+                'message' => 'Notification status updated',
+                'is_notification' => $user->is_notification,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'An error occurred: ' . $e->getMessage(),
+            ], 500);
+        }
+    }    
 }

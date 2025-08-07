@@ -31,6 +31,14 @@ Route::prefix('auth')->group(function () {
         Route::put('update-product/{id}', [AuthController::class, 'updateProduct']);
         Route::get('get-products-by-user/{userId}', [AuthController::class, 'getProductsByUser']);
         Route::delete('delete-product/{id}', [AuthController::class, 'deleteProduct']);
+        Route::delete('/delete-account', [AuthController::class, 'deleteAccount']);
+        
+        Route::get('page/{slug}', [AuthController::class,'page']);
+        
+        Route::post('/toggle-active', [AuthController::class, 'toggleActive']);
+    
+        Route::post('/toggle-notification', [AuthController::class, 'toggleNotification']);        
+        
     });
 });
     

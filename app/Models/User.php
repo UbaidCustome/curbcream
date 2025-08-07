@@ -40,6 +40,9 @@ class User extends Authenticatable
         'driver_license',
         'vehicle_registration',
         'insurance_card',
+        'is_active',
+        'is_notification',
+        'status'        
     ];
 
     /**
@@ -64,4 +67,8 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+    public function products()
+    {
+        return $this->hasMany(Product::class);
+    }    
 }
