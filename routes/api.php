@@ -29,7 +29,8 @@ Route::prefix('auth')->group(function () {
         Route::get('all-products', [AuthController::class, 'allProducts']);
         Route::get('get-product/{id}', [AuthController::class, 'getProduct']);
         Route::put('update-product/{id}', [AuthController::class, 'updateProduct']);
-        Route::post('delete-product/{id}', [AuthController::class, 'deleteProduct']);
+        Route::get('get-products-by-user/{userId}', [AuthController::class, 'getProductsByUser']);
+        Route::delete('delete-product/{id}', [AuthController::class, 'deleteProduct']);
     });
 });
     

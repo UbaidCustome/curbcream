@@ -39,7 +39,12 @@ class AuthController extends Controller
             'password' => bcrypt($request->password),
             'role' => $request->role,
         ]);
-
+        
+        $otp = '123456'; 
+        $user->otp = $otp;
+        $user->otp_expires_at = now()->addMinutes(10);
+        $user->save();
+        Mail::to($user->email)->send(new \App\Mail\SendOtpMail($otp));
         return response()->json([
             'success' => 1,
             'message' => 'Signup successful',
@@ -175,16 +180,16 @@ class AuthController extends Controller
         }
         $user = User::where('email', $request->email)->first();
         // $resetToken = Str::random(6);
-        $resetToken = '123456';
-        $user->password_reset_token = $resetToken;
-        $user->password_reset_expires_at = now()->addMinutes(30);
+        $otp = '123456';
+        $user->otp = $otp;
+        $user->otp_expires_at = now()->addMinutes(30);
         $user->save();
         // Here you would send the reset token to the user's email
         return response()->json([
             'success' => 1,
-            'message' => 'Password reset link sent to your email',
+            'message' => 'Otp sent to your email',
             'data' => [
-                'reset_token' => $resetToken,
+                'otp' => $otp,
             ]
         ]);
     }
@@ -192,7 +197,6 @@ class AuthController extends Controller
         // Logic to reset password
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|exists:users,email',
-            'reset_token' => 'required|string',
             'password' => 'required|min:6|confirmed',
         ]);
         if ($validator->fails()) {
@@ -202,10 +206,10 @@ class AuthController extends Controller
             ], 400); // Bad Request
         }
         $user = User::where('email', $request->email)->first();
-        if (!$user || $user->password_reset_token !== $request->reset_token || now()->greaterThan($user->password_reset_expires_at)) {
+        if (!$user || $user->otp !== $request->otp || now()->greaterThan($user->otp_expires_at)) {
             return response()->json([
                 'success' => 0,
-                'message' => 'Invalid or expired reset token',
+                'message' => 'Invalid or expired otp',
             ], 400); // Bad Request
         }
         $user->password = bcrypt($request->password);
@@ -483,4 +487,44 @@ class AuthController extends Controller
         ]);
 
     }
+    public function getProductsByUser($userId) {
+        // Logic to get products by user ID
+        $products = Product::where('user_id', $userId)->get();
+        if ($products->isEmpty()) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'No products found for this user',
+            ], 404); // Not Found
+        }
+        return response()->json([
+            'success' => 1,
+            'message' => 'Products retrieved successfully',
+            'data' => $products,
+        ]);
+    }
+    public function deleteProduct($id) {
+        // Logic to delete a product
+        // return $id;
+        $product = Product::find($id);
+        if (!$product) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Product not found',
+            ], 404); // Not Found 
+        }
+        // Delete product images from storage
+        if ($product->images) {
+            foreach ($product->images as $imagePath) {
+                $imageFullPath = storage_path('app/public/' . $imagePath);
+                if (file_exists($imageFullPath)) {
+                    unlink($imageFullPath);  // Delete the image file 
+                }
+            }
+        }
+        $product->delete(); // Delete the product from the database
+        return response()->json([
+            'success' => 1,
+            'message' => 'Product deleted successfully',
+        ]);
+    }            
 }
