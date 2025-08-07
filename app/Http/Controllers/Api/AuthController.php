@@ -44,7 +44,7 @@ class AuthController extends Controller
         $user->otp = $otp;
         $user->otp_expires_at = now()->addMinutes(10);
         $user->save();
-        Mail::to($user->email)->send(new \App\Mail\SendOtpMail($otp));
+        // Mail::to($user->email)->send(new \App\Mail\SendOtpMail($otp));
         return response()->json([
             'success' => 1,
             'message' => 'Signup successful',
@@ -184,6 +184,7 @@ class AuthController extends Controller
         $user->otp = $otp;
         $user->otp_expires_at = now()->addMinutes(30);
         $user->save();
+        // Mail::to($user->email)->send(new \App\Mail\SendOtpMail($otp));
         // Here you would send the reset token to the user's email
         return response()->json([
             'success' => 1,
