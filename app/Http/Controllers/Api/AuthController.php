@@ -27,7 +27,10 @@ class AuthController extends Controller
         if ($validator->fails()) {
             $error = $validator->errors()->first();
 
-            return $this->errorResponse($error, 400); // Bad Request
+            return response()->json([
+                'success' => 0,
+                'message' => $error,
+            ], 400);
         }
 
         $user = User::create([
@@ -358,36 +361,67 @@ class AuthController extends Controller
             'data' => $user,
         ]);
     }
-    public function addProduct(Request $request) {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'price' => 'required|numeric|regex:/^\d{1,6}(\.\d{1,2})?$/',
-            'images' => 'required|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',  // Validate each image
-        ]);
-        if ($validator->fails()) {
+    public function addProduct(Request $request)
+    {
+        try {
+            // Validate the incoming request
+            $validator = Validator::make($request->all(), [
+                'products' => 'required|array|min:1',
+                'products.*.name'  => 'required|string|max:255',
+                'products.*.price' => ['required','numeric','regex:/^\d{1,6}(\.\d{1,2})?$/'],
+                // Validate the image for each product
+                'products.*.image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            ]);
+    
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => 0,
+                    'message' => $validator->errors()->first(),
+                ], 400);
+            }
+    
+            // Store products
+            $created = [];
+    
+            // Loop through each product
+            foreach ($request->input('products', []) as $index => $payload) {
+                // Attempt to handle the file upload for each product's image
+                try {
+                    $file = $request->file("products.$index.image");
+                    $path = $file ? $file->store('products', 'public') : null;
+    
+                    // Create the product
+                    $product = Product::create([
+                        'name'    => $payload['name'],
+                        'price'   => $payload['price'],
+                        'images'  => $path ? [$path] : [],
+                        'user_id' => AuthFacade::id(),
+                    ]);
+    
+                    $created[] = $product;
+                } catch (\Exception $e) {
+                    // Handle error during product creation
+                    return response()->json([
+                        'success' => 0,
+                        'message' => 'Error uploading product image: ' . $e->getMessage(),
+                    ], 500);
+                }
+            }
+    
+            // Return success response after all products are added
+            return response()->json([
+                'success' => 1,
+                'message' => 'Products added successfully',
+                'data'    => $created,
+            ], 201); // HTTP Status 201: Created
+    
+        } catch (\Exception $e) {
+            // Catch any other unexpected errors
             return response()->json([
                 'success' => 0,
-                'message' => $validator->errors()->first(),
-            ], 400);
+                'message' => 'An error occurred: ' . $e->getMessage(),
+            ], 500);
         }
-        $imagePaths = [];
-        if ($request->hasFile('images')) {
-            foreach ($request->file('images') as $image) {
-                $imagePaths[] = $image->store('products', 'public');  // Store images in 'products' folder
-            }
-        }
-        $product = Product::create([
-            'name' => $request->name,
-            'price' => $request->price,
-            'images' => $imagePaths,
-            'user_id' => AuthFacade::id(),
-        ]);
-        return response()->json([
-            'success' => 1,
-            'message' => 'Product added successfully',
-            'data' => $product,
-        ], 201);  // Created        
     }
     public function allProducts() {
         $products = Product::all();

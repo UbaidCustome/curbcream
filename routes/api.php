@@ -14,8 +14,9 @@ Route::prefix('auth')->group(function () {
     Route::post('send-otp', [AuthController::class, 'sendOtp']);
     Route::post('verify-otp', [AuthController::class, 'verifyOtp']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
-    Route::post('reset-password', [AuthController::class, 'resetPassword']);
+    Route::post('reset-password', [AuthController::class, 'resetPassword']); 
     Route::post('resend-otp', [AuthController::class, 'resendOtp']);
+    Route::get('page/{slug}', [AuthController::class,'page']);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('all-users', [AuthController::class, 'allUsers']);
@@ -33,7 +34,6 @@ Route::prefix('auth')->group(function () {
         Route::delete('delete-product/{id}', [AuthController::class, 'deleteProduct']);
         Route::delete('/delete-account', [AuthController::class, 'deleteAccount']);
         
-        Route::get('page/{slug}', [AuthController::class,'page']);
         
         Route::post('/toggle-active', [AuthController::class, 'toggleActive']);
     
