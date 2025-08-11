@@ -40,6 +40,7 @@ class User extends Authenticatable
         'driver_license',
         'vehicle_registration',
         'insurance_card',
+        'profile_completed',
         'is_active',
         'is_notification',
         'status'        

@@ -252,8 +252,9 @@ class AuthController extends Controller
             $user->bio = $request->bio ?? $user->bio;
             if ($request->hasFile('avatar')) {
                 $avatarPath = $request->file('avatar')->store('user/avatars', 'public');
-                $user->avatar = $avatarPath; // Assuming you have an 'avatar' column
+                $user->avatar = $avatarPath;
             }
+            $user->profile_completed = true;
             $user->save();        
             return response()->json([
                 'success' => 1,
@@ -271,20 +272,21 @@ class AuthController extends Controller
             $user->vehicle_category = $request->vehicle_category ?? $user->vehicle_category;
             if ($request->hasFile('profile_picture')) {
                 $avatarPath = $request->file('profile_picture')->store('driver/profile_pic', 'public');
-                $user->profile_picture = $avatarPath; // Assuming you have an 'avatar' column
+                $user->profile_picture = $avatarPath;
             }            
             if ($request->hasFile('driving_license')) {
                 $avatarPath = $request->file('driving_license')->store('driver/documents', 'public');
-                $user->driving_license = $avatarPath; // Assuming you have an 'avatar' column
+                $user->driving_license = $avatarPath;
             }            
             if ($request->hasFile('vehicle_registration')) {
                 $avatarPath = $request->file('vehicle_registration')->store('driver/documents', 'public');
-                $user->vehicle_registration = $avatarPath; // Assuming you have an 'avatar' column
+                $user->vehicle_registration = $avatarPath;
             }            
             if ($request->hasFile('insurence_card')) {
                 $avatarPath = $request->file('insurence_card')->store('driver/documents', 'public');
-                $user->insurence_card = $avatarPath; // Assuming you have an 'avatar' column
+                $user->insurence_card = $avatarPath;
             }
+            $user->profile_completed = true;
             $user->save();
             return response()->json([
                 'success' => 1,
