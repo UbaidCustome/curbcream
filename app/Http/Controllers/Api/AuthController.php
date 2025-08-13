@@ -16,7 +16,15 @@ use Illuminate\Support\Str;
 class AuthController extends Controller
 {
     use ApiResponser;
-
+    private function handleFileUpload($request, $fieldName, $folder, $existingFilePath = null) {
+        if ($request->hasFile($fieldName)) {
+            if ($existingFilePath) {
+                Storage::disk('public')->delete($existingFilePath);
+            }
+            return $request->file($fieldName)->store($folder, 'public');
+        }
+        return $existingFilePath;
+    }
     public function signup(Request $request) {
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|unique:users',
@@ -69,7 +77,7 @@ class AuthController extends Controller
             return response()->json([
                 'success' => 0,
                 'message' => 'Invalid credentials',
-            ], 401);
+            ], 400);
         }
         $token = $user->createToken('curbcream')->plainTextToken;
         return response()->json([
@@ -187,45 +195,51 @@ class AuthController extends Controller
             'email' => 'required|email|exists:users,email',
             'password' => 'required|min:6|confirmed',
         ]);
+        
         if ($validator->fails()) {
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
             ], 400);
         }
+        
         $user = User::where('email', $request->email)->first();
-        if (!$user || $user->otp !== $request->otp || now()->greaterThan($user->otp_expires_at)) {
+        if (!$user || $user->otp !== $request->otp || ($user->otp_expires_at && now()->greaterThan($user->otp_expires_at))) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Invalid or expired otp',
             ], 400);
         }
+        
         $user->password = bcrypt($request->password);
-        $user->password_reset_token = null;
-        $user->password_reset_expires_at = null;
+        $user->otp = null;
+        $user->otp_expires_at = null;
         $user->save();
-
+    
         return response()->json([
             'success' => 1,
             'message' => 'Password reset successfully',
         ]);
     }
+
     public function updateProfile(Request $request) {
         $authId = AuthFacade::user()->id;
-        $user = User::where('id', $authId)->first();
+        $user = User::find($authId); // Simplified to use find method
+        
         if (!$user) {
             return response()->json([
                 'success' => 0,
                 'message' => 'User not authenticated',
             ], 401);
         }
+    
         $validator = Validator::make($request->all(), [
             'first_name' => 'nullable|string|max:255',
             'last_name' => 'nullable|string|max:255',
             'email' => 'nullable|email',
-            'phone' => 'nullable|string|max:15',
-            'address' => 'nullable|string|max:255',
-            'bio' => 'nullable|string|max:500',
+            'phone' => 'nullable',
+            'address' => 'nullable|string',
+            'bio' => 'nullable|string',
             'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg',
             'profile_picture' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg',
             'open_time' => 'nullable|string',
@@ -234,67 +248,64 @@ class AuthController extends Controller
             'driving_license' => 'nullable|image|mimes:pdf',
             'vehicle_registration' => 'nullable|image|mimes:pdf',
             'insurence_card' => 'nullable|image|mimes:pdf',
-            
         ]);
+    
         if ($validator->fails()) {
             return response()->json([
                 'success' => 0,
                 'message' => $validator->errors()->first(),
             ], 400);
         }
-        if($user->role == 'user'){
-            $user->first_name = $request->first_name ?? $user->first_name;
-            $user->last_name = $request->last_name ?? $user->last_name;
-            $user->name = $request->first_name.' '.$request->last_name;
-            $user->email = $request->email ?? $user->email;
-            $user->phone = $request->phone ?? $user->phone;
-            $user->address = $request->address ?? $user->address;
-            $user->bio = $request->bio ?? $user->bio;
-            if ($request->hasFile('avatar')) {
-                $avatarPath = $request->file('avatar')->store('user/avatars', 'public');
-                $user->avatar = $avatarPath;
-            }
-            $user->profile_completed = true;
-            $user->save();        
-            return response()->json([
-                'success' => 1,
-                'message' => 'Profile updated successfully',
-                'data' => $user,
-            ]);
+    
+        // Prepare profile data based on the role
+        $profileData = [
+            'email' => $request->email ?? $user->email,
+            'phone' => $request->phone ?? $user->phone,
+            'address' => $request->address ?? $user->address,
+            'bio' => $request->bio ?? $user->bio,
+        ];
+    
+        if ($user->role == 'user') {
+            // Handle user's specific fields
+            $profileData['first_name'] = $request->first_name ?? $user->first_name;
+            $profileData['last_name'] = $request->last_name ?? $user->last_name;
+            $profileData['name'] = $request->first_name.' '.$request->last_name;
+    
+            // Handle file uploads for the user
+            $profileData['avatar'] = $this->handleFileUpload($request, 'avatar', 'user/avatars', $user->avatar);
+        } else {
+            // Handle business specific fields
+            $profileData['business_name'] = $request->business_name ?? $user->business_name;
+            $profileData['location'] = $request->location ?? $user->location;
+            $profileData['open_time'] = $request->open_time ?? $user->open_time;
+            $profileData['close_time'] = $request->close_time ?? $user->close_time;
+            $profileData['vehicle_category'] = $request->vehicle_category ?? $user->vehicle_category;
+    
+            // Handle file uploads for business
+            $profileData['profile_picture'] = $this->handleFileUpload($request, 'profile_picture', 'driver/profile_pic', $user->profile_picture);
+            $profileData['driving_license'] = $this->handleFileUpload($request, 'driving_license', 'driver/documents', $user->driving_license);
+            $profileData['vehicle_registration'] = $this->handleFileUpload($request, 'vehicle_registration', 'driver/documents', $user->vehicle_registration);
+            $profileData['insurence_card'] = $this->handleFileUpload($request, 'insurence_card', 'driver/documents', $user->insurence_card);
         }
-        else{
-            $user->business_name = $request->business_name ?? $user->business_name;
-            $user->email = $request->email ?? $user->email;
-            $user->phone = $request->phone ?? $user->phone;
-            $user->location = $request->location ?? $user->location;
-            $user->open_time = $request->open_time ?? $user->open_time;
-            $user->close_time = $request->close_time ?? $user->close_time;
-            $user->vehicle_category = $request->vehicle_category ?? $user->vehicle_category;
-            if ($request->hasFile('profile_picture')) {
-                $avatarPath = $request->file('profile_picture')->store('driver/profile_pic', 'public');
-                $user->profile_picture = $avatarPath;
-            }            
-            if ($request->hasFile('driving_license')) {
-                $avatarPath = $request->file('driving_license')->store('driver/documents', 'public');
-                $user->driving_license = $avatarPath;
-            }            
-            if ($request->hasFile('vehicle_registration')) {
-                $avatarPath = $request->file('vehicle_registration')->store('driver/documents', 'public');
-                $user->vehicle_registration = $avatarPath;
-            }            
-            if ($request->hasFile('insurence_card')) {
-                $avatarPath = $request->file('insurence_card')->store('driver/documents', 'public');
-                $user->insurence_card = $avatarPath;
-            }
-            $user->profile_completed = true;
-            $user->save();
-            return response()->json([
-                'success' => 1,
-                'message' => 'Profile updated successfully',
-                'data' => $user,
-            ]);
-        }
+    
+        $isFirstTime = $user->profile_completed ? false : true;
+    
+        $user->update($profileData);
+    
+        $user->profile_completed = true;
+        $user->save();
+    
+        $message = $isFirstTime ? 'Profile Created Successfully' : 'Profile updated successfully';
+    
+        return response()->json([
+            'success' => 1,
+            'message' => $message,
+            'data' => [
+                'user' => $user,
+            ]
+        ]);
     }
+
     public function changePassword(Request $request) {
         $id = AuthFacade::user()->id;
         $user = User::find($id);
@@ -455,11 +466,11 @@ class AuthController extends Controller
                 'message' => 'Product not found',
             ], 404);
         }
+    
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'price' => 'sometimes|required|numeric|regex:/^\d{1,6}(\.\d{1,2})?$/',
-            'images' => 'sometimes|required|array',
-            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            'image' => 'sometimes|required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -467,39 +478,38 @@ class AuthController extends Controller
                 'message' => $validator->errors()->first(),
             ], 400);
         }
+    
+        // Update product fields
         if ($request->has('name')) {
             $product->name = $request->name;
         }
         if ($request->has('price')) {
             $product->price = $request->price;
         }
-        if ($request->hasFile('images')) {
-            $imagePaths = [];
-            
-            if ($product->images) {
-                foreach ($product->images as $existingImagePath) {
-                    $existingImageFullPath = storage_path('app/public/' . $existingImagePath);
-
-                    if (file_exists($existingImageFullPath)) {
-                        unlink($existingImageFullPath);
-                    }
+    
+        // Handle image upload
+        if ($request->hasFile('image')) {
+            // Delete the existing image if it exists
+            if ($product->image) {
+                $existingImageFullPath = storage_path('app/public/' . $product->image);
+                if (file_exists($existingImageFullPath)) {
+                    unlink($existingImageFullPath);
                 }
             }
-
-            foreach ($request->file('images') as $image) {
-                $imagePaths[] = $image->store('products', 'public');
-            }
-
-            $product->images = $imagePaths;
+    
+            // Store the new image and update the product's image field
+            $imagePath = $request->file('image')->store('products', 'public');
+            $product->image = $imagePath;
         }
+    
         $product->save();
         return response()->json([
             'success' => 1,
             'message' => 'Product updated successfully',
             'data' => $product,
         ]);
-
     }
+
     public function getProductsByUser($userId) {
         $products = Product::where('user_id', $userId)->get();
         if ($products->isEmpty()) {
@@ -583,14 +593,14 @@ class AuthController extends Controller
     {
         try {
             $user = AuthFacade::user();
-
+    
             $user->is_active = !$user->is_active;
-
+    
             $user->save();
             return response()->json([
                 'status' => 1,
                 'message' => 'Account status updated',
-                'is_active' => $user->is_active,
+                'is_active' => (int) $user->is_active, // Cast boolean to integer
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -600,19 +610,20 @@ class AuthController extends Controller
         }
     }
 
+
     public function toggleNotification(Request $request)
     {
         try {
             $user = AuthFacade::user();
-
+    
             $user->is_notification = !$user->is_notification;
-
+    
             $user->save();
-
+    
             return response()->json([
                 'status' => 1,
                 'message' => 'Notification status updated',
-                'is_notification' => $user->is_notification,
+                'is_notification' => (int) $user->is_notification, // Cast boolean to integer
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -620,5 +631,6 @@ class AuthController extends Controller
                 'message' => 'An error occurred: ' . $e->getMessage(),
             ], 500);
         }
-    }    
+    }
+   
 }
