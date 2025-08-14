@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
 class AuthController extends Controller
 {
     use ApiResponser;
@@ -245,9 +246,9 @@ class AuthController extends Controller
             'open_time' => 'nullable|string',
             'close_time' => 'nullable|string',
             'vehicle_category' => 'nullable|string',
-            'driving_license' => 'nullable|image|mimes:pdf',
-            'vehicle_registration' => 'nullable|image|mimes:pdf',
-            'insurence_card' => 'nullable|image|mimes:pdf',
+            'driver_license' => 'nullable|image|mimes:pdf,jpg,jpeg,png',
+            'vehicle_registration' => 'nullable|image|mimes:pdf,jpg,jpeg,png',
+            'insurance_card' => 'nullable|image|mimes:pdf,jpg,jpeg,png',
         ]);
     
         if ($validator->fails()) {
@@ -257,7 +258,6 @@ class AuthController extends Controller
             ], 400);
         }
     
-        // Prepare profile data based on the role
         $profileData = [
             'email' => $request->email ?? $user->email,
             'phone' => $request->phone ?? $user->phone,
@@ -266,26 +266,22 @@ class AuthController extends Controller
         ];
     
         if ($user->role == 'user') {
-            // Handle user's specific fields
             $profileData['first_name'] = $request->first_name ?? $user->first_name;
             $profileData['last_name'] = $request->last_name ?? $user->last_name;
             $profileData['name'] = $request->first_name.' '.$request->last_name;
     
-            // Handle file uploads for the user
             $profileData['avatar'] = $this->handleFileUpload($request, 'avatar', 'user/avatars', $user->avatar);
         } else {
-            // Handle business specific fields
             $profileData['business_name'] = $request->business_name ?? $user->business_name;
             $profileData['location'] = $request->location ?? $user->location;
             $profileData['open_time'] = $request->open_time ?? $user->open_time;
             $profileData['close_time'] = $request->close_time ?? $user->close_time;
             $profileData['vehicle_category'] = $request->vehicle_category ?? $user->vehicle_category;
     
-            // Handle file uploads for business
             $profileData['profile_picture'] = $this->handleFileUpload($request, 'profile_picture', 'driver/profile_pic', $user->profile_picture);
-            $profileData['driving_license'] = $this->handleFileUpload($request, 'driving_license', 'driver/documents', $user->driving_license);
+            $profileData['driver_license'] = $this->handleFileUpload($request, 'driver_license', 'driver/documents', $user->driver_license);
             $profileData['vehicle_registration'] = $this->handleFileUpload($request, 'vehicle_registration', 'driver/documents', $user->vehicle_registration);
-            $profileData['insurence_card'] = $this->handleFileUpload($request, 'insurence_card', 'driver/documents', $user->insurence_card);
+            $profileData['insurance_card'] = $this->handleFileUpload($request, 'insurance_card', 'driver/documents', $user->insurance_card);
         }
     
         $isFirstTime = $user->profile_completed ? false : true;
@@ -377,12 +373,10 @@ class AuthController extends Controller
     public function addProduct(Request $request)
     {
         try {
-            // Validate the incoming request
             $validator = Validator::make($request->all(), [
                 'products' => 'required|array|min:1',
                 'products.*.name'  => 'required|string|max:255',
                 'products.*.price' => ['required','numeric','regex:/^\d{1,6}(\.\d{1,2})?$/'],
-                // Validate the image for each product
                 'products.*.image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
             ]);
     
@@ -393,17 +387,13 @@ class AuthController extends Controller
                 ], 400);
             }
     
-            // Store products
             $created = [];
     
-            // Loop through each product
             foreach ($request->input('products', []) as $index => $payload) {
-                // Attempt to handle the file upload for each product's image
                 try {
                     $file = $request->file("products.$index.image");
                     $path = $file ? $file->store('products', 'public') : null;
     
-                    // Create the product
                     $product = Product::create([
                         'name'    => $payload['name'],
                         'price'   => $payload['price'],
@@ -413,7 +403,6 @@ class AuthController extends Controller
     
                     $created[] = $product;
                 } catch (\Exception $e) {
-                    // Handle error during product creation
                     return response()->json([
                         'success' => 0,
                         'message' => 'Error uploading product image: ' . $e->getMessage(),
@@ -421,15 +410,13 @@ class AuthController extends Controller
                 }
             }
     
-            // Return success response after all products are added
             return response()->json([
                 'success' => 1,
                 'message' => 'Products added successfully',
                 'data'    => $created,
-            ], 201); // HTTP Status 201: Created
+            ], 200);
     
         } catch (\Exception $e) {
-            // Catch any other unexpected errors
             return response()->json([
                 'success' => 0,
                 'message' => 'An error occurred: ' . $e->getMessage(),
@@ -479,7 +466,6 @@ class AuthController extends Controller
             ], 400);
         }
     
-        // Update product fields
         if ($request->has('name')) {
             $product->name = $request->name;
         }
@@ -487,9 +473,7 @@ class AuthController extends Controller
             $product->price = $request->price;
         }
     
-        // Handle image upload
         if ($request->hasFile('image')) {
-            // Delete the existing image if it exists
             if ($product->image) {
                 $existingImageFullPath = storage_path('app/public/' . $product->image);
                 if (file_exists($existingImageFullPath)) {
@@ -497,7 +481,6 @@ class AuthController extends Controller
                 }
             }
     
-            // Store the new image and update the product's image field
             $imagePath = $request->file('image')->store('products', 'public');
             $product->image = $imagePath;
         }
@@ -578,13 +561,13 @@ class AuthController extends Controller
             $user->delete();
     
             return response()->json([
-                'status' => 1,
+                'success' => 1,
                 'message' => 'Account deleted successfully',
             ]);
             
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 0,
+                'success' => 0,
                 'message' => 'An error occurred: ' . $e->getMessage(),
             ], 500);
         }
@@ -598,13 +581,13 @@ class AuthController extends Controller
     
             $user->save();
             return response()->json([
-                'status' => 1,
+                'success' => 1,
                 'message' => 'Account status updated',
-                'is_active' => (int) $user->is_active, // Cast boolean to integer
+                'is_active' => (int) $user->is_active,
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 0,
+                'success' => 0,
                 'message' => 'An error occurred: ' . $e->getMessage(),
             ], 500);
         }
@@ -621,13 +604,13 @@ class AuthController extends Controller
             $user->save();
     
             return response()->json([
-                'status' => 1,
+                'success' => 1,
                 'message' => 'Notification status updated',
-                'is_notification' => (int) $user->is_notification, // Cast boolean to integer
+                'is_notification' => (int) $user->is_notification,
             ]);
         } catch (\Exception $e) {
             return response()->json([
-                'status' => 0,
+                'success' => 0,
                 'message' => 'An error occurred: ' . $e->getMessage(),
             ], 500);
         }
