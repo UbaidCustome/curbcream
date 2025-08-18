@@ -13,7 +13,14 @@ return new class extends Migration
     {
         Schema::create('reviews', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('user_id');   // reviewer
+            $table->unsignedBigInteger('driver_id'); // driver being reviewed
+            $table->decimal('rating', 2, 1); // like 1.5, 2, 2.5 ... 5
+            $table->text('review')->nullable();
             $table->timestamps();
+    
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+            $table->foreign('driver_id')->references('id')->on('users')->onDelete('cascade');
         });
     }
 
