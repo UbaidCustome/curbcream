@@ -1,12 +1,16 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\FavouriteController;
+use App\Http\Controllers\Api\ReviewController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+
+Route::get('auth/all-products', [AuthController::class, 'allProducts']);
 
 Route::prefix('auth')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
@@ -21,13 +25,14 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('all-users', [AuthController::class, 'allUsers']);
         Route::get('get-user/{id}', [AuthController::class, 'getUser']);
+        Route::get('get-drivers', [AuthController::class, 'getDrivers']);
         
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('update-profile', [AuthController::class, 'updateProfile']);
         Route::post('update-password', [AuthController::class, 'changePassword']);
 
         Route::post('add-product', [AuthController::class, 'addProduct']);
-        Route::get('all-products', [AuthController::class, 'allProducts']);
+        
         Route::get('get-product/{id}', [AuthController::class, 'getProduct']);
         Route::put('update-product/{id}', [AuthController::class, 'updateProduct']);
         Route::get('get-products-by-user/{userId}', [AuthController::class, 'getProductsByUser']);
@@ -37,7 +42,13 @@ Route::prefix('auth')->group(function () {
         
         Route::post('/toggle-active', [AuthController::class, 'toggleActive']);
     
-        Route::post('/toggle-notification', [AuthController::class, 'toggleNotification']);        
+        Route::post('/toggle-notification', [AuthController::class, 'toggleNotification']);
+        
+        Route::post('/add-to-favourite', [FavouriteController::class, 'addToFavourite']);
+        Route::get('/get-favourites', [FavouriteController::class, 'getFavourites']);
+        
+        Route::post('/post-review', [ReviewController::class, 'submitReview']);
+        Route::get('/get-reviews/{driver_id}', [ReviewController::class, 'getDriverReviews']);        
         
     });
 });

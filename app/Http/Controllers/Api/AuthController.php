@@ -80,6 +80,12 @@ class AuthController extends Controller
                 'message' => 'Invalid credentials',
             ], 400);
         }
+        if ($user->role !== $request->role) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Invalid login role ',
+            ], 400);
+        }        
         $token = $user->createToken('curbcream')->plainTextToken;
         return response()->json([
             'success' => 1,
@@ -247,6 +253,7 @@ class AuthController extends Controller
             'close_time' => 'nullable|string',
             'vehicle_category' => 'nullable|string',
             'driver_license' => 'nullable|image|mimes:pdf,jpg,jpeg,png',
+            'taxi_operator_license' => 'nullable|image|mimes:pdf,jpg,jpeg,png',
             'vehicle_registration' => 'nullable|image|mimes:pdf,jpg,jpeg,png',
             'insurance_card' => 'nullable|image|mimes:pdf,jpg,jpeg,png',
         ]);
@@ -278,8 +285,10 @@ class AuthController extends Controller
             $profileData['close_time'] = $request->close_time ?? $user->close_time;
             $profileData['vehicle_category'] = $request->vehicle_category ?? $user->vehicle_category;
     
+            $profileData['avatar'] = $this->handleFileUpload($request, 'avatar', 'driver/avatars', $user->avatar);
             $profileData['profile_picture'] = $this->handleFileUpload($request, 'profile_picture', 'driver/profile_pic', $user->profile_picture);
             $profileData['driver_license'] = $this->handleFileUpload($request, 'driver_license', 'driver/documents', $user->driver_license);
+            $profileData['taxi_operator_license'] = $this->handleFileUpload($request, 'taxi_operator_license', 'driver/documents', $user->taxi_operator_license);
             $profileData['vehicle_registration'] = $this->handleFileUpload($request, 'vehicle_registration', 'driver/documents', $user->vehicle_registration);
             $profileData['insurance_card'] = $this->handleFileUpload($request, 'insurance_card', 'driver/documents', $user->insurance_card);
         }
@@ -367,6 +376,20 @@ class AuthController extends Controller
         return response()->json([
             'success' => 1,
             'message' => 'User retrieved successfully',
+            'data' => $user,
+        ]);
+    } 
+    public function getDrivers() {
+        $user = User::where(['role'=>'driver','profile_completed'=>true])->get();
+        if (!$user) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Data not found',
+            ], 404);
+        }
+        return response()->json([
+            'success' => 1,
+            'message' => 'Drivers retrieved successfully',
             'data' => $user,
         ]);
     }

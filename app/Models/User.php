@@ -38,6 +38,7 @@ class User extends Authenticatable
         'profile_picture',
         'vehicle_category',
         'driver_license',
+        'taxi_operator_license',
         'vehicle_registration',
         'insurance_card',
         'profile_completed',
