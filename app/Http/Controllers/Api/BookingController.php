@@ -149,5 +149,71 @@ class BookingController extends Controller
         ]);
     }
 
+    public function getBookingDetail($id)
+    {
+        if (!Auth::check()) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        $user = Auth::user();
+
+        $booking = Booking::with(['user', 'driver'])
+                    ->where('id', $id)
+                    ->first();
+
+        if (!$booking) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Booking not found.'
+            ], 404);
+        }
+
+        // Agar driver hai
+        if ($user->role == 'driver') {
+            $data = [
+                'id' => $booking->id,
+                'passenger_name' => $booking->passenger_name,
+                'location' => $booking->location,
+                'ride_date' => $booking->ride_date,
+                'ride_time' => $booking->ride_time,
+                'distance' => $booking->distance,
+                'status' => $booking->status,
+                'request_type' => $booking->request_type,
+                'amount' => $booking->amount ?? null,
+                // Passenger info
+                'passenger' => [
+                    'id' => $booking->user->id,
+                    'name' => $booking->user->name,
+                    'avatar' => $booking->user->avatar ?? null,
+                ]
+            ];
+        } else {
+            // Agar passenger hai
+            $data = [
+                'id' => $booking->id,
+                'location' => $booking->location,
+                'ride_date' => $booking->ride_date,
+                'ride_time' => $booking->ride_time,
+                'distance' => $booking->distance,
+                'status' => $booking->status,
+                'request_type' => $booking->request_type,
+                'amount' => $booking->amount ?? null,
+                // Driver info
+                'driver' => [
+                    'id' => $booking->driver->id,
+                    'name' => $booking->driver->name,
+                    'avatar' => $booking->driver->avatar ?? null,
+                    'reviews_count' => $booking->driver->reviews()->count(),
+                    'avg_rating' => round($booking->driver->reviews()->avg('rating'), 1),
+                ]
+            ];
+        }
+
+        return response()->json([
+            'status' => 1,
+            'message' => 'Booking detail retrieved successfully.',
+            'data' => $data
+        ]);
+    }
 
 }

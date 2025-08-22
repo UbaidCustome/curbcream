@@ -53,7 +53,8 @@ Route::prefix('auth')->group(function () {
         Route::get('/get-driver/{driver_id}/rating', [ReviewController::class, 'getDriverRating']);
 
         Route::get('/scheduled-bookings', [BookingController::class, 'getScheduledBookings']);
-        Route::get('/booking-history', [BookingController::class, 'getBookingHistory']);        
+        Route::get('/booking-history', [BookingController::class, 'getBookingHistory']);
+        Route::get('/bookings/{id}', [BookingController::class, 'getBookingDetail']);
         
     });
 });
