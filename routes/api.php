@@ -48,7 +48,8 @@ Route::prefix('auth')->group(function () {
         Route::get('/get-favourites', [FavouriteController::class, 'getFavourites']);
         
         Route::post('/post-review', [ReviewController::class, 'submitReview']);
-        Route::get('/get-reviews/{driver_id}', [ReviewController::class, 'getDriverReviews']);        
+        Route::get('/get-reviews/{driver_id}', [ReviewController::class, 'getDriverReviews']);
+        Route::get('/get-driver/{driver_id}/rating', [ReviewController::class, 'getDriverRating']);
         
     });
 });
