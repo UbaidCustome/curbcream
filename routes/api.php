@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\FavouriteController;
 use App\Http\Controllers\Api\ReviewController;
 use Illuminate\Http\Request;
@@ -50,6 +51,9 @@ Route::prefix('auth')->group(function () {
         Route::post('/post-review', [ReviewController::class, 'submitReview']);
         Route::get('/get-reviews/{driver_id}', [ReviewController::class, 'getDriverReviews']);
         Route::get('/get-driver/{driver_id}/rating', [ReviewController::class, 'getDriverRating']);
+
+        Route::get('/scheduled-bookings', [BookingController::class, 'getScheduledBookings']);
+        Route::get('/booking-history', [BookingController::class, 'getBookingHistory']);        
         
     });
 });

@@ -379,20 +379,36 @@ class AuthController extends Controller
             'data' => $user,
         ]);
     } 
-    public function getDrivers() {
-        $user = User::where(['role'=>'driver','profile_completed'=>true])->get();
-        if (!$user) {
+    public function getDrivers()
+    {
+        $drivers = User::where(['role' => 'driver', 'profile_completed' => true])
+            ->withCount('reviews')
+            ->withAvg('reviews', 'rating')
+            ->get();
+
+        if ($drivers->isEmpty()) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Data not found',
             ], 404);
         }
+
+        // Round average rating to 1 decimal place
+        $drivers->transform(function ($driver) {
+            $driver->reviews_avg_rating = $driver->reviews_avg_rating 
+                ? round($driver->reviews_avg_rating, 1) 
+                : null;
+            return $driver;
+        });
+
         return response()->json([
             'success' => 1,
             'message' => 'Drivers retrieved successfully',
-            'data' => $user,
+            'data' => $drivers,
         ]);
     }
+
+
     public function addProduct(Request $request)
     {
         try {
