@@ -64,7 +64,7 @@ class BookingController extends Controller
                                 // Driver info for passenger screen
                                 'driver' => [
                                     'id' => $booking->driver->id,
-                                    'name' => $booking->driver->name,
+                                    'name' => $booking->driver->name??$booking->driver->business_name,
                                     'avatar' => $booking->driver->avatar ?? null,
                                     'reviews_count' => $booking->driver->reviews()->count(),
                                     'avg_rating' => round($booking->driver->reviews()->avg('rating'), 1),
@@ -133,7 +133,7 @@ class BookingController extends Controller
                                 // Driver info for passenger screen
                                 'driver' => [
                                     'id' => $booking->driver->id,
-                                    'name' => $booking->driver->name,
+                                    'name' => $booking->driver->name??$booking->driver->business_name,
                                     'avatar' => $booking->driver->avatar ?? null,
                                     'reviews_count' => $booking->driver->reviews()->count(),
                                     'avg_rating' => round($booking->driver->reviews()->avg('rating'), 1),
