@@ -379,34 +379,45 @@ class AuthController extends Controller
             'data' => $user,
         ]);
     } 
-    public function getDrivers()
+    public function getDrivers(Request $request)
     {
+        $userId = $request->user_id ?? auth()->id();
+    
         $drivers = User::where(['role' => 'driver', 'profile_completed' => true])
             ->withCount('reviews')
             ->withAvg('reviews', 'rating')
+            ->with(['favouritedBy' => function($q) use ($userId) {
+                $q->where('user_id', $userId);
+            }])
             ->get();
-
+    
         if ($drivers->isEmpty()) {
             return response()->json([
                 'success' => 0,
                 'message' => 'Data not found',
             ], 404);
         }
-
-        // Round average rating to 1 decimal place
+    
         $drivers->transform(function ($driver) {
             $driver->reviews_avg_rating = $driver->reviews_avg_rating 
                 ? round($driver->reviews_avg_rating, 1) 
                 : null;
+    
+            // check if favourite exists
+            $driver->is_favourite = $driver->favouritedBy->isNotEmpty();
+    
+            unset($driver->favouritedBy);
+    
             return $driver;
         });
-
+    
         return response()->json([
             'success' => 1,
             'message' => 'Drivers retrieved successfully',
             'data' => $drivers,
         ]);
     }
+
 
 
     public function addProduct(Request $request)
@@ -416,7 +427,7 @@ class AuthController extends Controller
                 'products' => 'required|array|min:1',
                 'products.*.name'  => 'required|string|max:255',
                 'products.*.price' => ['required','numeric','regex:/^\d{1,6}(\.\d{1,2})?$/'],
-                'products.*.image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+                'products.*.image' => 'required|image|mimes:jpeg,png,jpg,gif,svg|max:5120',
             ]);
     
             if ($validator->fails()) {
@@ -484,7 +495,8 @@ class AuthController extends Controller
             'data' => $product,
         ]);
     }
-    public function updateProduct(Request $request, $id) {
+    public function updateProduct(Request $request, $id)
+    {
         $product = Product::find($id);
         if (!$product) {
             return response()->json([
@@ -494,10 +506,12 @@ class AuthController extends Controller
         }
     
         $validator = Validator::make($request->all(), [
-            'name' => 'sometimes|required|string|max:255',
-            'price' => 'sometimes|required|numeric|regex:/^\d{1,6}(\.\d{1,2})?$/',
-            'image' => 'sometimes|required|image|mimes:jpeg,png,jpg,gif,svg|max:2048',
+            'name'   => 'sometimes|required|string|max:255',
+            'price'  => 'sometimes|required|numeric|regex:/^\d{1,6}(\.\d{1,2})?$/',
+            'images'   => 'sometimes|required|array',
+            'images.*' => 'image|mimes:jpeg,png,jpg,gif,svg|max:5120',
         ]);
+    
         if ($validator->fails()) {
             return response()->json([
                 'success' => 0,
@@ -508,29 +522,39 @@ class AuthController extends Controller
         if ($request->has('name')) {
             $product->name = $request->name;
         }
+    
         if ($request->has('price')) {
             $product->price = $request->price;
         }
     
-        if ($request->hasFile('image')) {
-            if ($product->image) {
-                $existingImageFullPath = storage_path('app/public/' . $product->image);
-                if (file_exists($existingImageFullPath)) {
-                    unlink($existingImageFullPath);
+        if ($request->hasFile('images')) {
+            if (!empty($product->images)) {
+                foreach ((array) $product->images as $oldImage) {
+                    $existingImageFullPath = storage_path('app/public/' . $oldImage);
+                    if (file_exists($existingImageFullPath)) {
+                        @unlink($existingImageFullPath);
+                    }
                 }
             }
-    
-            $imagePath = $request->file('image')->store('products', 'public');
-            $product->image = $imagePath;
+        
+            $imagePaths = [];
+            foreach ($request->file('images') as $file) {
+                $imagePaths[] = $file->store('products', 'public');
+            }
+        
+            $product->images = $imagePaths;
         }
+
     
         $product->save();
+    
         return response()->json([
             'success' => 1,
             'message' => 'Product updated successfully',
-            'data' => $product,
+            'data'    => $product,
         ]);
     }
+
 
     public function getProductsByUser($userId) {
         $products = Product::where('user_id', $userId)->get();

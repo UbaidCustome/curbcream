@@ -25,7 +25,6 @@ class FavouriteController extends Controller
     
         $user = auth()->user();
     
-        // Check if driver role hai
         $driver = User::find($request->driver_id);
         if ($driver->role !== 'driver') {
             return response()->json([
@@ -34,27 +33,30 @@ class FavouriteController extends Controller
             ], 400);
         }
     
-        // Prevent duplicate favourites
-        $exists = Favourite::where('user_id', $user->id)
-                            ->where('driver_id', $request->driver_id)
-                            ->exists();
+        $favourite = Favourite::where('user_id', $user->id)
+                              ->where('driver_id', $request->driver_id)
+                              ->first();
     
-        if ($exists) {
+        if ($favourite) {
+            $favourite->delete();
+    
             return response()->json([
-                'success' => 0,
-                'message' => 'Driver already in favourites',
-            ], 400);
+                'success' => 1,
+                'message' => 'Driver removed from favourites',
+                'is_favourite' => false
+            ], 200);
+        } else {
+            Favourite::create([
+                'user_id' => $user->id,
+                'driver_id' => $request->driver_id,
+            ]);
+    
+            return response()->json([
+                'success' => 1,
+                'message' => 'Driver added to favourites',
+                'is_favourite' => true
+            ], 200);
         }
-    
-        Favourite::create([
-            'user_id' => $user->id,
-            'driver_id' => $request->driver_id,
-        ]);
-    
-        return response()->json([
-            'success' => 1,
-            'message' => 'Driver added to favourites',
-        ],201);
     }
     public function getFavourites()
     {

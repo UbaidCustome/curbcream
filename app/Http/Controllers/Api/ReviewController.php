@@ -86,6 +86,7 @@ class ReviewController extends Controller
     
         return response()->json([
             'success' => 1,
+            'message'=>'Data Retrieved',
             'data' => [
                 'average_rating' => round($averageRating, 1),
                 'total_reviews'  => $totalReviews,
@@ -109,6 +110,7 @@ class ReviewController extends Controller
 
         return response()->json([
             'success' => 1,
+            'message' => 'Data Retrieved',
             'data' => [
                 'average_rating'  => round($averageRating, 1), // e.g. 4.5
                 'total_reviews'   => $totalReviews

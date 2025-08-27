@@ -82,6 +82,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(Favourite::class);
     }
+    public function myFavourites()
+    {
+        return $this->hasMany(Favourite::class, 'user_id');
+    }
+    public function favouritedBy()
+    {
+        return $this->hasMany(Favourite::class, 'driver_id');
+    }
     public function bookings(): HasMany
     {
         return $this->hasMany(Booking::class, 'user_id');
