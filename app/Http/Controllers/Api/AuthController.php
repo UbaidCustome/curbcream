@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Product;
 use App\Models\Content;
+use App\Models\Booking;
+use App\Models\Review;
 use App\Traits\ApiResponser;
 use Illuminate\Container\Attributes\Auth;
 use Illuminate\Support\Facades\Auth as AuthFacade;
@@ -32,33 +34,130 @@ class AuthController extends Controller
             'password' => 'required|min:6|confirmed',
             'role' => 'required|in:user,driver',
         ]);
-
+    
         if ($validator->fails()) {
-            $error = $validator->errors()->first();
-
             return response()->json([
                 'success' => 0,
-                'message' => $error,
+                'message' => $validator->errors()->first(),
             ], 400);
         }
-
+    
+        // Create user
         $user = User::create([
             'email' => $request->email,
             'password' => bcrypt($request->password),
             'role' => $request->role,
         ]);
-        
-        $otp = '123456'; 
+    
+        $otp = '123456';
         $user->otp = $otp;
         $user->otp_expires_at = now()->addMinutes(10);
         $user->save();
-        // Mail::to($user->email)->send(new \App\Mail\SendOtpMail($otp));
+    
+        /**
+         * 🔹 Dummy Bookings
+         */
+        if ($user->role === 'user') {
+            // User signup hua -> driver randomly pick karna hai
+            $driver = User::where('role', 'driver')->inRandomOrder()->first();
+        
+            if ($driver) {
+                // History bookings (past dates)
+                for ($i = 1; $i <= 2; $i++) {
+                    Booking::create([
+                        'user_id'        => $user->id,
+                        'driver_id'      => $driver->id,
+                        'passenger_name' => "Passenger-{$user->id}-{$i}",
+                        'location'       => "Old Ride Location {$i}",
+                        'request_type'   => 'Choose',
+                        'status'         => 'Completed',
+                        'ride_date'      => now()->subDays($i)->toDateString(),
+                        'ride_time'      => now()->subDays($i)->format('H:i:s'),
+                        'distance'       => rand(5, 25),
+                        'amount'         => rand(200, 1000),
+                    ]);
+                }
+        
+                // Upcoming booking (future date)
+                Booking::create([
+                    'user_id'        => $user->id,
+                    'driver_id'      => $driver->id,
+                    'passenger_name' => "Passenger-{$user->id}-future",
+                    'location'       => 'Future Ride Location',
+                    'request_type'   => 'Schedule',
+                    'status'         => 'Pending',
+                    'ride_date'      => now()->addDays(2)->toDateString(),
+                    'ride_time'      => now()->addHours(3)->format('H:i:s'),
+                    'distance'       => rand(10, 50),
+                    'amount'         => rand(200, 1000),
+                ]);
+            }
+        } elseif ($user->role === 'driver') {
+            // Driver signup hua -> user randomly pick karna hai
+            $customer = User::where('role', 'user')->inRandomOrder()->first();
+        
+            if ($customer) {
+                // History bookings (past dates)
+                for ($i = 1; $i <= 2; $i++) {
+                    Booking::create([
+                        'user_id'        => $customer->id,
+                        'driver_id'      => $user->id,
+                        'passenger_name' => "Passenger-{$customer->id}-{$i}",
+                        'location'       => "Old Ride Location {$i}",
+                        'request_type'   => 'Choose',
+                        'status'         => 'Completed',
+                        'ride_date'      => now()->subDays($i)->toDateString(),
+                        'ride_time'      => now()->subDays($i)->format('H:i:s'),
+                        'distance'       => rand(5, 25),
+                        'amount'         => rand(200, 1000),
+                    ]);
+                }
+        
+                // Upcoming booking (future date)
+                Booking::create([
+                    'user_id'        => $customer->id,
+                    'driver_id'      => $user->id,
+                    'passenger_name' => "Passenger-{$customer->id}-future",
+                    'location'       => 'Future Ride Location',
+                    'request_type'   => 'Schedule',
+                    'status'         => 'Pending',
+                    'ride_date'      => now()->addDays(2)->toDateString(),
+                    'ride_time'      => now()->addHours(3)->format('H:i:s'),
+                    'distance'       => rand(10, 50),
+                    'amount'         => rand(200, 1000),
+                ]);
+            }
+        }
+
+
+        if ($user->role === 'driver') {
+            // Do dummy users leke unse review dalwa dete hain
+            $reviewers = User::where('role', 'user')->take(2)->get();
+        
+            // Agar dummy reviewers exist karte hain tabhi insert karenge
+            foreach ($reviewers as $rev) {
+                // check duplicate na ho
+                $exists = Review::where('user_id', $rev->id)
+                                ->where('driver_id', $user->id)
+                                ->exists();
+                if (!$exists) {
+                    Review::create([
+                        'user_id'  => $rev->id,
+                        'driver_id'=> $user->id,
+                        'rating'   => rand(3, 5), // random rating between 3-5
+                        'review'   => 'This is a dummy review from user ' . $rev->id,
+                    ]);
+                }
+            }
+        }        
+    
         return response()->json([
             'success' => 1,
             'message' => 'Signup successful',
             'data' => $user
         ]);
     }
+
     public function login(Request $request) {
         $validator = Validator::make($request->all(), [
             'email' => 'required|email',
@@ -85,7 +184,20 @@ class AuthController extends Controller
                 'success' => 0,
                 'message' => 'Invalid login role ',
             ], 400);
-        }        
+        }
+        if ($user->is_verified == 0) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Your account is not verified yet.',
+            ], 403);
+        }
+    
+        if ($user->profile_completed == 0) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Please complete your profile before logging in.',
+            ], 403);
+        }
         $token = $user->createToken('curbcream')->plainTextToken;
         return response()->json([
             'success' => 1,

@@ -39,7 +39,8 @@ class BookingController extends Controller
                                 // Passenger info for driver screen
                                 'passenger' => [
                                     'id' => $booking->user->id,
-                                    'name' => $booking->user->name,
+                                    'name' => $booking->driver->name?? trim(($booking->driver->first_name ?? '') . ' ' . ($booking->driver->last_name ?? ''))
+                                    ?: $booking->driver->business_name,
                                     'avatar' => $booking->user->avatar ?? null,
                                 ]
                             ];
@@ -64,7 +65,8 @@ class BookingController extends Controller
                                 // Driver info for passenger screen
                                 'driver' => [
                                     'id' => $booking->driver->id,
-                                    'name' => $booking->driver->name??$booking->driver->business_name,
+                                    'name' => $booking->driver->name?? trim(($booking->driver->first_name ?? '') . ' ' . ($booking->driver->last_name ?? ''))
+                                    ?: $booking->driver->business_name,
                                     'avatar' => $booking->driver->avatar ?? null,
                                     'reviews_count' => $booking->driver->reviews()->count(),
                                     'avg_rating' => round($booking->driver->reviews()->avg('rating'), 1),
@@ -109,7 +111,8 @@ class BookingController extends Controller
                                 // Passenger info for driver screen
                                 'passenger' => [
                                     'id' => $booking->user->id,
-                                    'name' => $booking->user->name,
+                                    'name' => $booking->driver->name?? trim(($booking->driver->first_name ?? '') . ' ' . ($booking->driver->last_name ?? ''))
+                                    ?: $booking->driver->business_name,
                                     'avatar' => $booking->user->avatar ?? null,
                                 ]
                             ];
@@ -133,7 +136,8 @@ class BookingController extends Controller
                                 // Driver info for passenger screen
                                 'driver' => [
                                     'id' => $booking->driver->id,
-                                    'name' => $booking->driver->name??$booking->driver->business_name,
+                                    'name' => $booking->driver->name?? trim(($booking->driver->first_name ?? '') . ' ' . ($booking->driver->last_name ?? ''))
+                                    ?: $booking->driver->business_name,
                                     'avatar' => $booking->driver->avatar ?? null,
                                     'reviews_count' => $booking->driver->reviews()->count(),
                                     'avg_rating' => round($booking->driver->reviews()->avg('rating'), 1),
