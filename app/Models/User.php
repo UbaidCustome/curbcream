@@ -32,6 +32,8 @@ class User extends Authenticatable
         'bio',
         'avatar',
         'address',
+        'current_lat',
+        'current_lng',
         'business_name',
         'location',
         'open_time',

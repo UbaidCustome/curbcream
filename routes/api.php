@@ -52,6 +52,8 @@ Route::prefix('auth')->group(function () {
         Route::get('/get-reviews/{driver_id}', [ReviewController::class, 'getDriverReviews']);
         Route::get('/get-driver/{driver_id}/rating', [ReviewController::class, 'getDriverRating']);
 
+
+        Route::post('/bookings/schedule', [BookingController::class, 'scheduleBooking']);
         Route::get('/scheduled-bookings', [BookingController::class, 'getScheduledBookings']);
         Route::get('/booking-history', [BookingController::class, 'getBookingHistory']);
         Route::get('/bookings/{id}', [BookingController::class, 'getBookingDetail']);

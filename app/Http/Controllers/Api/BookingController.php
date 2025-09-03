@@ -3,13 +3,96 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Booking;
+use App\Models\BookingRequest;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class BookingController extends Controller
 {
+    public function scheduleBooking(Request $request)
+    {
+        $request->validate([
+            'ride_time' => 'required|date_format:H:i',
+            'lat' => 'required|numeric',
+            'lng' => 'required|numeric',
+            'location' => 'nullable|string',
+            'special_instruction' => 'nullable|string',
+        ]);
+    
+        $now = Carbon::now();
+        $rideDateTime = Carbon::today()->setTimeFromTimeString($request->ride_time);
+    
+        if ($rideDateTime->lessThanOrEqualTo($now)) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Ride time must be later than the current time.',
+            ], 422);
+        }
+    
+        if ($rideDateTime->lessThanOrEqualTo($now->copy()->addHour())) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Scheduled rides must be booked at least 1 hour in advance.',
+            ], 422);
+        }
+    
+        $radius = 5; // km
+        $pickupLat = $request->lat;
+        $pickupLng = $request->lng;
+    
+        $drivers = User::select(
+                'id',
+                'name',
+                'current_lat',
+                'current_lng',
+                    DB::raw("CAST(ROUND(6371 * acos(
+                        cos(radians($pickupLat)) 
+                        * cos(radians(current_lat)) 
+                        * cos(radians(current_lng) - radians($pickupLng)) 
+                        + sin(radians($pickupLat)) 
+                        * sin(radians(current_lat))
+                    ), 2) AS DECIMAL(5,2)) AS distance")
+            )
+            ->where('role', 'driver')
+            ->where('is_active', 1)
+            ->having('distance', '<=', 5)
+            ->orderBy('distance', 'asc')
+            ->get();
+        // return $drivers;
+        if ($drivers->isEmpty()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'No drivers found within 5km radius. Please try again later.',
+            ], 404);
+        }
+    
+        $booking = BookingRequest::create([
+            'user_id' => auth()->id(),
+            'request_type' => 'Schedule',
+            'status' => 'Pending',
+            'ride_time' => $request->ride_time,
+            'lat' => $request->lat,
+            'lng' => $request->lng,
+            'location' => $request->location,
+            'special_instruction' => $request->special_instruction,
+        ]);
+    
+        // foreach ($drivers as $driver) {
+        //     event(new NewScheduleBooking($booking, $driver->id));
+    
+        //     $driver->notify(new NewScheduleBookingNotification($booking));
+        // }
+    
+        return response()->json([
+            'status' => 1,
+            'message' => 'Schedule booking created successfully. Nearby drivers notified.',
+            'data' => $booking,
+        ]);
+    }
+    
     public function getScheduledBookings()
     {
         if (!Auth::check()) {
