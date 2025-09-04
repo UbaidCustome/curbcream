@@ -4,13 +4,16 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\FavouriteController;
 use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\NotificationController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
-
+Route::get('/client-test', function (Request $request) {
+    return view('client-test');
+});
 Route::get('auth/all-products', [AuthController::class, 'allProducts']);
 
 Route::prefix('auth')->group(function () {
@@ -52,11 +55,14 @@ Route::prefix('auth')->group(function () {
         Route::get('/get-reviews/{driver_id}', [ReviewController::class, 'getDriverReviews']);
         Route::get('/get-driver/{driver_id}/rating', [ReviewController::class, 'getDriverRating']);
 
-
+        Route::post('/driver/update-location', [AuthController::class, 'updateLocation']);
         Route::post('/bookings/schedule', [BookingController::class, 'scheduleBooking']);
         Route::get('/scheduled-bookings', [BookingController::class, 'getScheduledBookings']);
         Route::get('/booking-history', [BookingController::class, 'getBookingHistory']);
         Route::get('/bookings/{id}', [BookingController::class, 'getBookingDetail']);
+        
+        Route::get('/driver/notifications', [NotificationController::class, 'index']);
+        Route::post('/driver/notifications/read/{id}', [NotificationController::class, 'markAsRead']);
         
     });
 });

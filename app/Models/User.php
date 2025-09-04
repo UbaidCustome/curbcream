@@ -12,7 +12,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable,HasApiTokens;
+    use HasFactory, Notifiable,HasApiTokens,Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -99,5 +99,14 @@ class User extends Authenticatable
     public function driverBookings(): HasMany
     {
         return $this->hasMany(Booking::class, 'driver_id');
+    }
+    public function sentNotifications()
+    {
+        return $this->hasMany(Notification::class, 'user_id');
+    }
+
+    public function receivedNotifications()
+    {
+        return $this->hasMany(Notification::class, 'driver_id');
     }
 }

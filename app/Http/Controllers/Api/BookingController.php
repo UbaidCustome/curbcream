@@ -3,17 +3,27 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Booking;
 use App\Models\BookingRequest;
+use App\Models\Notification;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 class BookingController extends Controller
 {
     public function scheduleBooking(Request $request)
     {
+        if (Auth::user()->role !== 'user') {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Only users can create bookings.',
+            ], 403);
+        }
+
         $request->validate([
             'ride_time' => 'required|date_format:H:i',
             'lat' => 'required|numeric',
@@ -21,28 +31,28 @@ class BookingController extends Controller
             'location' => 'nullable|string',
             'special_instruction' => 'nullable|string',
         ]);
-    
+
         $now = Carbon::now();
         $rideDateTime = Carbon::today()->setTimeFromTimeString($request->ride_time);
-    
+
         if ($rideDateTime->lessThanOrEqualTo($now)) {
             return response()->json([
                 'status' => 0,
                 'message' => 'Ride time must be later than the current time.',
             ], 422);
         }
-    
+
         if ($rideDateTime->lessThanOrEqualTo($now->copy()->addHour())) {
             return response()->json([
                 'status' => 0,
                 'message' => 'Scheduled rides must be booked at least 1 hour in advance.',
             ], 422);
         }
-    
+
         $radius = 5; // km
         $pickupLat = $request->lat;
         $pickupLng = $request->lng;
-    
+
         $drivers = User::select(
                 'id',
                 'name',
@@ -58,19 +68,19 @@ class BookingController extends Controller
             )
             ->where('role', 'driver')
             ->where('is_active', 1)
-            ->having('distance', '<=', 5)
+            ->having('distance', '<=', $radius)
             ->orderBy('distance', 'asc')
             ->get();
-        // return $drivers;
+
         if ($drivers->isEmpty()) {
             return response()->json([
-                'status' => false,
-                'message' => 'No drivers found within 5km radius. Please try again later.',
+                'status' => 0,
+                'message' => 'No drivers found. Please try later.',
             ], 404);
         }
-    
+
         $booking = BookingRequest::create([
-            'user_id' => auth()->id(),
+            'user_id' => Auth::user()->id,
             'request_type' => 'Schedule',
             'status' => 'Pending',
             'ride_time' => $request->ride_time,
@@ -79,20 +89,58 @@ class BookingController extends Controller
             'location' => $request->location,
             'special_instruction' => $request->special_instruction,
         ]);
-    
-        // foreach ($drivers as $driver) {
-        //     event(new NewScheduleBooking($booking, $driver->id));
-    
-        //     $driver->notify(new NewScheduleBookingNotification($booking));
-        // }
-    
+        foreach ($drivers as $driver) {
+
+        }
+        foreach ($drivers as $driver) {
+            Notification::create([
+                'user_id' => Auth::id(),
+                'driver_id' => $driver->id,
+                'booking_id' => $booking->id,
+                'title' => 'New Booking Received',
+                'message' => Auth::user()->name . ' has requested a booking at ' . $request->ride_time,
+            ]);
+            // if ($driver->fcm_token) {
+            //     $this->sendPushNotification($driver->fcm_token, [
+            //         'title' => 'New Scheduled Ride',
+            //         'body' => 'You have a new scheduled ride request nearby.',
+            //         'booking_id' => $booking->id,
+            //     ]);
+            // }
+        }
+
+        // Http::post(env('SOCKET_SERVER_URL').'/emit/new-schedule-booking', [
+        //     'booking' => $booking,
+        //     'drivers' => $drivers,
+        // ]);
+
         return response()->json([
             'status' => 1,
             'message' => 'Schedule booking created successfully. Nearby drivers notified.',
             'data' => $booking,
         ]);
     }
-    
+    private function sendPushNotification($token, $data)
+    {
+        $fcmUrl = 'https://fcm.googleapis.com/fcm/send';
+        $serverKey = env('FCM_SERVER_KEY');
+
+        $payload = [
+            'to' => $token,
+            'notification' => [
+                'title' => $data['title'],
+                'body' => $data['body'],
+                'sound' => 'default'
+            ],
+            'data' => $data
+        ];
+
+        Http::withHeaders([
+            'Authorization' => "key=$serverKey",
+            'Content-Type' => 'application/json',
+        ])->post($fcmUrl, $payload);
+    }
+
     public function getScheduledBookings()
     {
         if (!Auth::check()) {

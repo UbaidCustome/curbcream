@@ -192,12 +192,12 @@ class AuthController extends Controller
             ], 403);
         }
     
-        if ($user->profile_completed == 0) {
-            return response()->json([
-                'success' => 0,
-                'message' => 'Please complete your profile before logging in.',
-            ], 403);
-        }
+        // if ($user->profile_completed == 0) {
+        //     return response()->json([
+        //         'success' => 0,
+        //         'message' => 'Please complete your profile before logging in.',
+        //     ], 403);
+        // }
         $token = $user->createToken('curbcream')->plainTextToken;
         return response()->json([
             'success' => 1,
@@ -388,9 +388,10 @@ class AuthController extends Controller
             $profileData['first_name'] = $request->first_name ?? $user->first_name;
             $profileData['last_name'] = $request->last_name ?? $user->last_name;
             $profileData['name'] = $request->first_name.' '.$request->last_name;
-    
+            
             $profileData['avatar'] = $this->handleFileUpload($request, 'avatar', 'user/avatars', $user->avatar);
         } else {
+            $profileData['name'] = $request->first_name.' '.$request->last_name;
             $profileData['business_name'] = $request->business_name ?? $user->business_name;
             $profileData['location'] = $request->location ?? $user->location;
             $profileData['open_time'] = $request->open_time ?? $user->open_time;
@@ -790,5 +791,43 @@ class AuthController extends Controller
             ], 500);
         }
     }
-   
+    public function updateLocation(Request $request)
+    {
+        try {
+            $user = AuthFacade::user();
+    
+            $validator = Validator::make($request->all(), [
+                'latitude' => 'required|numeric',
+                'longitude' => 'required|numeric',
+            ]);
+    
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => 0,
+                    'message' => $validator->errors()->first(),
+                ], 400);
+            }
+    
+            $user->latitude = $request->latitude;
+            $user->longitude = $request->longitude;
+    
+            $user->save();
+    
+            return response()->json([
+                'success' => 1,
+                'message' => 'Location updated successfully',
+                'data' => [
+                    'id'=> $user->id,
+                    'name'=> $user->name??$user->first_name??$user->business_name,
+                    'latitude' => $user->latitude,
+                    'longitude' => $user->longitude,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'An error occurred: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }
