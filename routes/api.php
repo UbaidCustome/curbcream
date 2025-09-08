@@ -60,9 +60,12 @@ Route::prefix('auth')->group(function () {
         Route::get('/scheduled-bookings', [BookingController::class, 'getScheduledBookings']);
         Route::get('/booking-history', [BookingController::class, 'getBookingHistory']);
         Route::get('/bookings/{id}', [BookingController::class, 'getBookingDetail']);
+        Route::post('/bookings/{id}/cancel', [BookingController::class, 'cancelBooking']);
+        Route::post('/bookings/driver-response', [BookingController::class, 'driverResponse']);
+
         
-        Route::get('/driver/notifications', [NotificationController::class, 'index']);
-        Route::post('/driver/notifications/read/{id}', [NotificationController::class, 'markAsRead']);
+        Route::get('/notifications', [NotificationController::class, 'index']);
+        Route::post('/notifications/read/{id}', [NotificationController::class, 'markAsRead']);
         
     });
 });

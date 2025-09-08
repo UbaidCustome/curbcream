@@ -797,8 +797,8 @@ class AuthController extends Controller
             $user = AuthFacade::user();
     
             $validator = Validator::make($request->all(), [
-                'latitude' => 'required|numeric',
-                'longitude' => 'required|numeric',
+                'current_lat' => 'required|numeric',
+                'current_lng' => 'required|numeric',
             ]);
     
             if ($validator->fails()) {
@@ -808,8 +808,8 @@ class AuthController extends Controller
                 ], 400);
             }
     
-            $user->latitude = $request->latitude;
-            $user->longitude = $request->longitude;
+            $user->current_lat = $request->current_lat;
+            $user->current_lng = $request->current_lng;
     
             $user->save();
     
@@ -818,9 +818,9 @@ class AuthController extends Controller
                 'message' => 'Location updated successfully',
                 'data' => [
                     'id'=> $user->id,
-                    'name'=> $user->name??$user->first_name??$user->business_name,
-                    'latitude' => $user->latitude,
-                    'longitude' => $user->longitude,
+                    'name'=> $user->name??$user->first_name." ".$user->last_name??$user->business_name,
+                    'latitude' => $user->current_lat,
+                    'longitude' => $user->current_lng,
                 ]
             ]);
         } catch (\Exception $e) {
