@@ -16,6 +16,9 @@ class BookingRequest extends Model
         'driver_id',
         'request_type',        // Schedule | Choose | Request
         'status',              // Pending | Accepted | On Going | Completed | Rejected
+        'cancelled_by',
+        'cancelled_by_role',
+        'cancel_reason',        
         'ride_time',           // sirf time (HH:MM:SS)
         'lat',
         'lng',

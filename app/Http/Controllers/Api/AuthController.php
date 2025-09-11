@@ -13,6 +13,7 @@ use Illuminate\Container\Attributes\Auth;
 use Illuminate\Support\Facades\Auth as AuthFacade;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
@@ -55,7 +56,7 @@ class AuthController extends Controller
         $user->save();
     
         /**
-         * 🔹 Dummy Bookings
+         * ðŸ”¹ Dummy Bookings
          */
         if ($user->role === 'user') {
             // User signup hua -> driver randomly pick karna hai
@@ -494,33 +495,48 @@ class AuthController extends Controller
     } 
     public function getDrivers(Request $request)
     {
+        // return $request;
         $userId = $request->user_id ?? auth()->id();
     
-        $drivers = User::where(['role' => 'driver', 'profile_completed' => true])
+        // ✅ User ki current location lat/lng required
+        $userLat = $request->lat;
+        $userLng = $request->lng;
+    
+        if (!$userLat || !$userLng) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'User location (lat, lng) is required',
+            ], 422);
+        }
+    
+        $radius = 10; // km
+        $drivers = User::where(['role' => 'driver', 'profile_completed' => 1,'is_active'=>1])
             ->withCount('reviews')
             ->withAvg('reviews', 'rating')
             ->with(['favouritedBy' => function($q) use ($userId) {
                 $q->where('user_id', $userId);
             }])
             ->get();
-    
         if ($drivers->isEmpty()) {
             return response()->json([
                 'success' => 0,
-                'message' => 'Data not found',
+                'message' => 'No drivers found within 10 km radius',
             ], 404);
         }
     
         $drivers->transform(function ($driver) {
-            $driver->reviews_avg_rating = $driver->reviews_avg_rating 
-                ? round($driver->reviews_avg_rating, 1) 
+            // Force clean 2 decimals
+            $driver->distance = number_format((float)$driver->distance, 2, '.', '');
+            $driver->distance_miles = number_format((float)$driver->distance * 0.621371, 2, '.', '');
+        
+            $driver->reviews_avg_rating = $driver->reviews_avg_rating
+                ? round((float)$driver->reviews_avg_rating, 1)
                 : null;
-    
-            // check if favourite exists
+        
             $driver->is_favourite = $driver->favouritedBy->isNotEmpty();
-    
+        
             unset($driver->favouritedBy);
-    
+        
             return $driver;
         });
     
@@ -530,9 +546,124 @@ class AuthController extends Controller
             'data' => $drivers,
         ]);
     }
+    public function getDriverDetail($id)
+    {
+        $driver = User::where('role', 'driver')
+            ->where('id', $id)
+            ->withCount('reviews')                // total reviews count
+            ->withAvg('reviews', 'rating')        // avg rating
+            ->with(['products'])  // driver ke products aur reviews ke sath reviewer user
+            ->first();
 
+        if (!$driver) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Driver not found',
+            ], 404);
+        }
 
+        // round avg rating
+        $driver->reviews_avg_rating = $driver->reviews_avg_rating
+            ? round($driver->reviews_avg_rating, 1)
+            : null;
 
+        return response()->json([
+            'success' => 1,
+            'message' => 'Driver details retrieved successfully',
+            'data' => $driver,
+        ]);
+    }
+    public function searchDrivers(Request $request)
+    {
+        try {
+            $userId = $request->user_id ?? auth()->id();
+            
+            $request->validate([
+                'lat' => 'required|numeric',
+                'lng' => 'required|numeric',
+            ]);
+            
+            $userLat = $request->lat;
+            $userLng = $request->lng;
+            $maxDistance = $request->distance ?? 10; // km (default 10km)
+            $minRating = $request->rating ?? 0;      // minimum rating (default 0)
+    
+            $query = User::where([
+                    'role' => 'driver', 
+                    'profile_completed' => true,
+                    'is_active' => 1
+                ])
+                ->withCount('reviews')
+                ->withAvg('reviews', 'rating')
+                ->with(['favouritedBy' => function($q) use ($userId) {
+                    $q->where('user_id', $userId);
+                }]);
+            // $query = User::where([
+            //         'role' => 'driver', 
+            //         'profile_completed' => true,
+            //         'is_active' => 1
+            //     ])
+            //     ->select(
+            //         'users.*',
+            //         DB::raw("ROUND(6371 * acos(
+            //             cos(radians($userLat)) 
+            //             * cos(radians(current_lat)) 
+            //             * cos(radians(current_lng) - radians($userLng)) 
+            //             + sin(radians($userLat)) 
+            //             * sin(radians(current_lat))
+            //         ), 2) AS distance")
+            //     )
+            //     ->withCount('reviews')
+            //     ->withAvg('reviews', 'rating')
+            //     ->with(['favouritedBy' => function($q) use ($userId) {
+            //         $q->where('user_id', $userId);
+            //     }])
+            //     ->having('distance', '<=', $maxDistance);
+    
+
+            if ($minRating > 0) {
+                $query->having('reviews_avg_rating', '>=', $minRating);
+            }
+    
+            // $query->orderBy('distance', 'asc');
+    
+            $drivers = $query->get();
+    
+            if ($drivers->isEmpty()) {
+                return response()->json([
+                    'success' => 0,
+                    'message' => 'No drivers found matching your criteria',
+                ], 404);
+            }
+    
+            // ✅ Transform data
+            $drivers->transform(function ($driver) {
+                // $driver->distance = number_format((float)$driver->distance, 2, '.', '');
+                // $driver->distance_miles = number_format((float)$driver->distance * 0.621371, 2, '.', '');
+                
+                $driver->reviews_avg_rating = $driver->reviews_avg_rating
+                    ? round((float)$driver->reviews_avg_rating, 1)
+                    : null;
+                
+                $driver->is_favourite = $driver->favouritedBy->isNotEmpty();
+                unset($driver->favouritedBy);
+                
+                return $driver;
+            });
+    
+            return response()->json([
+                'success' => 1,
+                'message' => 'Drivers retrieved successfully',
+                'data' => $drivers,
+            ]);
+    
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Error searching drivers: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
     public function addProduct(Request $request)
     {
         try {
@@ -818,7 +949,6 @@ class AuthController extends Controller
                 'message' => 'Location updated successfully',
                 'data' => [
                     'id'=> $user->id,
-                    'name'=> $user->name??$user->first_name." ".$user->last_name??$user->business_name,
                     'latitude' => $user->current_lat,
                     'longitude' => $user->current_lng,
                 ]

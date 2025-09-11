@@ -44,34 +44,40 @@ const io = socketIo(server, {
 // 🔹 Socket events
 io.on('connection', (socket) => {
     console.log('✅ Client connected:', socket.id);
+    console.log("✅ Driver connected:", socket.id);
 
+    socket.on("registerDriver", (driverId) => {
+        socket.join(`driver_${driverId}`);
+        console.log(`🚚 Driver ${driverId} joined room driver_${driverId}`);
+    });
     socket.on('updateLocation', async (data) => {
         console.log("📍 Location update:", data);
-
+    
         try {
+            // ✅ Extract token from socket handshake headers
+            const token = socket.handshake.auth.token || data.token;
+            
             const res = await axios.post(`${process.env.LARAVEL_API}/driver/update-location`, {
                 current_lat: data.current_lat,
                 current_lng: data.current_lng
             }, {
-                headers: { Authorization: `Bearer ${data.token}` }
+                headers: { 
+                    Authorization: `Bearer ${token}` // ✅ Use extracted token
+                }
             });
-
+    
             console.log("✅ DB update success:", res.data);
-
-            io.emit(`driverLocationUpdated:${data.driver_id}`, {
+    
+            io.emit(`driverLocationUpdated:${data.user_id}`, {
                 current_lat: data.current_lat,
                 current_lng: data.current_lng
             });
-
+            console.log(`Location Update for user ${data.user_id}`)
+    
         } catch (err) {
-            if (err.response) {
-                console.error("❌ DB update error:", err.response.status, err.response.data);
-            } else {
-                console.error("❌ DB update error:", err.message);
-            }
+            console.error("❌ DB update error:", err.response?.data || err.message);
         }
     });
-
     socket.on('disconnect', () => {
         console.log('❌ Client disconnected:', socket.id);
     });
@@ -87,18 +93,39 @@ app.post('/emit/new-schedule-booking', (req, res) => {
             return res.status(400).json({ error: 'Booking or drivers missing' });
         }
 
-        drivers.forEach(driver => {
-            io.emit(`newScheduleBooking`, {
-                booking,
-                driver_id: driver.id
-            });
+        // Bas ek dafa emit karo
+        io.emit("newScheduleBooking", {
+            booking,
+            drivers,
         });
 
-        console.log("📢 New schedule booking emitted to drivers:", drivers.map(d => d.id));
+        console.log("📢 New schedule booking emitted once to all drivers:", drivers.map(d => d.id));
         res.json({ success: true });
 
     } catch (err) {
         console.error("❌ Error in /emit/new-schedule-booking:", err.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
+app.post('/emit/new-choose-booking', (req, res) => {
+    try {
+        const { booking, driver_id, user_id } = req.body;
+
+        if (!booking || !driver_id) {
+            return res.status(400).json({ error: 'Missing booking or driver_id' });
+        }
+
+        // Sirf ek driver ko emit karo
+        io.to(`driver_${driver_id}`).emit("newChooseBooking", {
+            booking,
+            user_id
+        });
+
+        console.log(`📢 ChooseTruck booking emitted to driver ${driver_id} from ${user_id}`);
+        res.json({ success: true });
+
+    } catch (err) {
+        console.error("❌ Error in /emit/new-choose-booking:", err.message);
         res.status(500).json({ error: "Internal server error" });
     }
 });
@@ -113,7 +140,7 @@ app.post('/emit/driver-response', (req, res) => {
         }
 
         io.emit(`driverResponse`, { booking, driver, status });
-        console.log(`📢 Driver ${driver.id} responded with ${status} for booking ${booking.id}`);
+        console.log(`📢 Driver ${booking.driver_id} responded with ${status} for booking ${booking.id}`);
 
         res.json({ success: true });
 
@@ -122,29 +149,60 @@ app.post('/emit/driver-response', (req, res) => {
         res.status(500).json({ error: "Internal server error" });
     }
 });
+app.post('/emit/booking-cancelled', (req, res) => {
+  const { booking_id, cancelled_by, cancelled_by_role, cancel_reason } = req.body;
 
+  if (!booking_id || !cancelled_by || !cancelled_by_role) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  io.emit("bookingCancelled", { booking_id, cancelled_by, cancelled_by_role, cancel_reason });
+
+  console.log(`🚫 Booking ${booking_id} cancelled by ${cancelled_by_role} (${cancelled_by}) Reason: ${cancel_reason}`);
+
+  res.json({ success: true });
+});
 // 🔹 Booking Closed
 app.post('/emit/booking-closed', (req, res) => {
     try {
-        const { booking_id, status } = req.body;
-
-        if (!booking_id) {
+        const { booking_id, driver_id, status } = req.body;  // 👈 safe destructure
+        
+        
+        if (!booking_id || !status) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
-        io.emit(`bookingClosed`, { booking_id, status });
-        console.log(`🚫 Booking closed event emitted for booking ${booking_id}`);
+        io.emit("bookingClosed", { booking_id, driver_id, status });
+
+        console.log(`🚫 Booking closed event emitted for booking ${booking_id} with status ${status}`);
 
         res.json({ success: true });
-
     } catch (err) {
         console.error("❌ Error in /emit/booking-closed:", err.message);
         res.status(500).json({ error: "Internal server error" });
     }
 });
+app.post('/emit/schedule-reminder', (req, res) => {
+    try {
+        const { booking_id, user_id, driver_id, ride_time, message } = req.body;
 
+        io.emit("scheduleReminder", {
+            booking_id,
+            user_id,
+            driver_id,
+            ride_time,
+            message
+        });
+
+        console.log(`⏰ Reminder emitted for booking ${booking_id}`);
+        res.json({ success: true });
+    } catch (err) {
+        console.error("❌ Error in /emit/schedule-reminder:", err.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
 // 🔹 Server start
-const PORT = process.env.SERVER_PORT || 3010;
+const PORT = process.env.SERVER_PORT;
 server.listen(PORT, () => {
     console.log(`🚀 Socket.IO running on port ${PORT} (${process.env.NODE_ENV})`);
 });

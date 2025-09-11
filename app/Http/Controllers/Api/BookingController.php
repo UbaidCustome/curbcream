@@ -24,7 +24,6 @@ class BookingController extends Controller
                     'message' => 'Only users can create bookings.',
                 ], 403);
             }
-    
             $request->validate([
                 'ride_time' => 'required|date_format:H:i',
                 'lat' => 'required|numeric',
@@ -43,12 +42,12 @@ class BookingController extends Controller
                 ], 422);
             }
     
-            if ($rideDateTime->lessThanOrEqualTo($now->copy()->addHour())) {
-                return response()->json([
-                    'status' => 0,
-                    'message' => 'Scheduled rides must be booked at least 1 hour in advance.',
-                ], 422);
-            }
+            // if ($rideDateTime->lessThanOrEqualTo($now->copy()->addHour())) {
+            //     return response()->json([
+            //         'status' => 0,
+            //         'message' => 'Scheduled rides must be booked at least 1 hour in advance.',
+            //     ], 422);
+            // }
     
             $radius = 5; // km
             $pickupLat = $request->lat;
@@ -56,7 +55,6 @@ class BookingController extends Controller
     
             $drivers = User::select(
                     'id',
-                    'name',
                     'current_lat',
                     'current_lng',
                     DB::raw("CAST(ROUND(6371 * acos(
@@ -106,21 +104,85 @@ class BookingController extends Controller
             }
     
             DB::commit(); // ✅ Transaction successful
+            $bookingArray = $booking->toArray();
+            $bookingArray['name'] = Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name;
+            $bookingArray['avatar'] = Auth::user()->avatar ?? null;
     
             // ✅ Socket emit (transaction ke bahar)
             Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-schedule-booking', [
-                'booking' => $booking,
+                'booking' => $bookingArray,
                 'drivers' => $drivers,
             ]);
-    
             return response()->json([
                 'status' => 1,
                 'message' => 'Schedule booking created successfully. Nearby drivers notified.',
-                'data' => $booking,
+                'data' => $bookingArray,
             ]);
     
         } catch (\Exception $e) {
             DB::rollBack(); // ❌ Rollback if error
+            return response()->json([
+                'status' => 0,
+                'message' => 'Failed to create booking.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    public function chooseTruckBooking(Request $request)
+    {
+        try {
+            if (Auth::user()->role !== 'user') {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Only users can create bookings.',
+                ], 403);
+            }
+    
+            $request->validate([
+                'driver_id' => 'required|exists:users,id',
+                'lat' => 'required|numeric',
+                'lng' => 'required|numeric',
+            ]);
+    
+            DB::beginTransaction();
+    
+            // ✅ Create booking
+            $booking = BookingRequest::create([
+                'user_id' => Auth::id(),
+                'driver_id' => $request->driver_id,
+                'request_type' => 'Choose',
+                'status' => 'Pending',
+                'lat' => $request->lat,
+                'lng' => $request->lng,
+            ]);
+    
+            // ✅ Notification for driver
+            Notification::create([
+                'user_id' => Auth::id(),
+                'driver_id' => $request->driver_id,
+                'booking_id' => $booking->id,
+                'title' => 'New Booking Request',
+                'message' => (Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name)
+                             . ' has requested a booking from you.',
+            ]);
+    
+            DB::commit();
+    
+            // ✅ Socket emit (only for this driver)
+            Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-choose-booking', [
+                'booking' => $booking,
+                'driver_id' => $request->driver_id,
+                'user_id'=>Auth::id()
+            ]);
+    
+            return response()->json([
+                'status' => 1,
+                'message' => 'Booking created successfully. Driver notified.',
+                'data' => $booking,
+            ]);
+    
+        } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 0,
                 'message' => 'Failed to create booking.',
@@ -429,44 +491,61 @@ class BookingController extends Controller
 
     public function cancelBooking(Request $request, $id)
     {
+        // return $request->cancel_reason;
         if (!Auth::check()) {
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
-    
+        // return auth()->user()->id;
         try {
             $booking = DB::transaction(function () use ($id) {
                 return BookingRequest::where('id', $id)
-                    ->where('user_id', Auth::id())
-                    ->lockForUpdate() // ✅ prevent race conditions
+                    ->lockForUpdate()
                     ->first();
             });
-    
+            // return $booking;
             if (!$booking) {
                 return response()->json([
                     'status' => 0,
                     'message' => 'Booking not found.',
                 ], 404);
             }
-    
-            if ($booking->status === 'Cancelled') {
-                return response()->json([
-                    'status' => 0,
-                    'message' => 'Booking is already cancelled.',
-                ], 400);
+            if (Auth::user()->role === 'driver') {
+                if ($booking->status !== 'Accepted') {
+                    return response()->json([
+                        'status' => 0,
+                        'message' => 'Driver can only cancel accepted bookings.',
+                    ], 400);
+                }
+            } else {
+                if (!in_array($booking->status, ['Pending', 'Accepted'])) {
+                    return response()->json([
+                        'status' => 0,
+                        'message' => 'User can only cancel pending or accepted bookings.',
+                    ], 400);
+                }
             }
-    
-            if ($booking->status !== 'Pending') {
-                return response()->json([
-                    'status' => 0,
-                    'message' => 'Only pending bookings can be cancelled.',
-                ], 400);
-            }
-    
-            DB::transaction(function () use ($booking) {
+            // return $request->cancel_reason;
+            DB::transaction(function () use ($booking, $request) {
                 $booking->status = 'Cancelled';
+                $booking->cancelled_by = Auth::id();
+                $booking->cancelled_by_role = Auth::user()->role;
+                $booking->cancel_reason = $request->cancel_reason ?? 'No reason provided';
                 $booking->save();
             });
-    
+            // return $request->cancel_reason;
+            if ($booking->status === 'Cancelled') {
+                Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/booking-cancelled', [
+                    'booking_id' => $booking->id,
+                    'cancelled_by' => Auth::id(),
+                    'cancelled_by_role' => Auth::user()->role,
+                    'cancel_reason' => $request->cancel_reason,
+                ]);                
+                Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/booking-closed', [
+                    'booking_id' => $booking->id,
+                    'driver_id' => $booking->driver_id,
+                    'status'=>'Cancelled'
+                ]);
+            }    
             return response()->json([
                 'status' => 1,
                 'message' => 'Booking cancelled successfully.',
@@ -553,6 +632,7 @@ class BookingController extends Controller
                 if ($booking->status === 'Accepted') {
                     Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/booking-closed', [
                         'booking_id' => $booking->id,
+                        'driver_id' => $request->driver_id,
                         'status'=>'Accepted'
                     ]);
                 }

@@ -29,7 +29,8 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('all-users', [AuthController::class, 'allUsers']);
         Route::get('get-user/{id}', [AuthController::class, 'getUser']);
-        Route::get('get-drivers', [AuthController::class, 'getDrivers']);
+        Route::post('get-drivers', [AuthController::class, 'getDrivers']);
+        Route::get('driver/{id}', [AuthController::class, 'getDriverDetail']);
         
         Route::post('logout', [AuthController::class, 'logout']);
         Route::post('update-profile', [AuthController::class, 'updateProfile']);
@@ -56,7 +57,9 @@ Route::prefix('auth')->group(function () {
         Route::get('/get-driver/{driver_id}/rating', [ReviewController::class, 'getDriverRating']);
 
         Route::post('/driver/update-location', [AuthController::class, 'updateLocation']);
+        Route::post('/drivers/search', [AuthController::class, 'searchDrivers']);
         Route::post('/bookings/schedule', [BookingController::class, 'scheduleBooking']);
+        Route::post('/bookings/choose', [BookingController::class, 'chooseTruckBooking']);
         Route::get('/scheduled-bookings', [BookingController::class, 'getScheduledBookings']);
         Route::get('/booking-history', [BookingController::class, 'getBookingHistory']);
         Route::get('/bookings/{id}', [BookingController::class, 'getBookingDetail']);
@@ -66,6 +69,7 @@ Route::prefix('auth')->group(function () {
         
         Route::get('/notifications', [NotificationController::class, 'index']);
         Route::post('/notifications/read/{id}', [NotificationController::class, 'markAsRead']);
+        
         
     });
 });
