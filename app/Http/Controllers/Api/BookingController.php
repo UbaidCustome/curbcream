@@ -190,7 +190,104 @@ class BookingController extends Controller
             ], 500);
         }
     }
-
+    public function instantBooking(Request $request)
+    {
+        try {
+            if (Auth::user()->role !== 'user') {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Only users can create bookings.',
+                ], 403);
+            }
+    
+            $request->validate([
+                'lat' => 'required|numeric',
+                'lng' => 'required|numeric',
+            ]);
+    
+            $radius = 5; // km
+            $pickupLat = $request->lat;
+            $pickupLng = $request->lng;
+    
+            // ✅ Find nearby drivers (5km radius)
+            $drivers = User::select(
+                    'id',
+                    'current_lat',
+                    'current_lng',
+                    DB::raw("CAST(ROUND(6371 * acos(
+                        cos(radians($pickupLat)) 
+                        * cos(radians(current_lat)) 
+                        * cos(radians(current_lng) - radians($pickupLng)) 
+                        + sin(radians($pickupLat)) 
+                        * sin(radians(current_lat))
+                    ), 2) AS DECIMAL(5,2)) AS distance")
+                )
+                ->where('role', 'driver')
+                ->where('is_active', 1)
+                ->having('distance', '<=', $radius)
+                ->orderBy('distance', 'asc')
+                ->get();
+            // return $drivers;
+            if ($drivers->isEmpty()) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'No drivers available nearby. Please try again later.',
+                ], 404);
+            }
+    
+            // ✅ Transaction start
+            DB::beginTransaction();
+    
+            $booking = BookingRequest::create([
+                'user_id' => Auth::user()->id,
+                'request_type' => 'Request',
+                'status' => 'Pending',
+                'lat' => $request->lat,
+                'lng' => $request->lng,
+            ]);
+    
+            foreach ($drivers as $driver) {
+                Notification::create([
+                    'user_id' => Auth::id(),
+                    'driver_id' => $driver->id,
+                    'booking_id' => $booking->id,
+                    'title' => 'Instant Booking Request',
+                    'message' => (Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name) 
+                                 . ' mada a request!',
+                ]);
+            }
+    
+            DB::commit();
+    
+            $bookingArray = $booking->toArray();
+            $bookingArray['name'] = Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name;
+            $bookingArray['avatar'] = Auth::user()->avatar ?? null;
+    
+            // ✅ Socket emit to all nearby drivers
+            Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-instant-booking', [
+                'booking' => $bookingArray,
+                'driver_ids' => $drivers,
+                'status'=>'Pending'
+            ]);
+    
+            return response()->json([
+                'status' => 1,
+                'message' => 'Instant booking created. Nearby drivers notified.',
+                'data' => [
+                    'booking' => $bookingArray,
+                    'total_drivers' => $drivers->count()
+                ],
+            ]);
+    
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 0,
+                'message' => 'Failed to create instant booking.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
     private function sendPushNotification($token, $data)
     {
         $fcmUrl = 'https://fcm.googleapis.com/fcm/send';

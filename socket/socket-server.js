@@ -129,7 +129,28 @@ app.post('/emit/new-choose-booking', (req, res) => {
         res.status(500).json({ error: "Internal server error" });
     }
 });
+app.post('/emit/new-instant-booking', (req, res) => {
+    try {
+        const { booking,driver_ids,status} = req.body;
 
+        if (!booking || !driver_ids) {
+            return res.status(400).json({ error: 'Booking or driver_ids missing' });
+        }
+
+        io.emit("newInstantBooking", {
+            booking,
+            driver_ids,
+            status
+        });
+
+        console.log(`📢 Instant booking sent to ${driver_ids.length} drivers`);
+        res.json({ success: true });
+
+    } catch (err) {
+        console.error("❌ Error in /emit/new-instant-booking:", err.message);
+        res.status(500).json({ error: "Internal server error" });
+    }
+});
 // 🔹 Driver Response
 app.post('/emit/driver-response', (req, res) => {
     try {

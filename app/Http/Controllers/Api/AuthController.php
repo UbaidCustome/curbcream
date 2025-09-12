@@ -200,6 +200,15 @@ class AuthController extends Controller
         //     ], 403);
         // }
         $token = $user->createToken('curbcream')->plainTextToken;
+        if ($user->role === 'driver') {
+            $user->loadCount('reviews');
+            $user->loadAvg('reviews', 'rating');
+    
+            $user->reviews_avg_rating = $user->reviews_avg_rating 
+                ? round($user->reviews_avg_rating, 1) 
+                : 0;
+        }
+        
         return response()->json([
             'success' => 1,
             'message' => 'Login successful',
@@ -531,7 +540,7 @@ class AuthController extends Controller
         
             $driver->reviews_avg_rating = $driver->reviews_avg_rating
                 ? round((float)$driver->reviews_avg_rating, 1)
-                : null;
+                : 0;
         
             $driver->is_favourite = $driver->favouritedBy->isNotEmpty();
         
@@ -565,8 +574,10 @@ class AuthController extends Controller
         // round avg rating
         $driver->reviews_avg_rating = $driver->reviews_avg_rating
             ? round($driver->reviews_avg_rating, 1)
-            : null;
-
+            : 0;
+        $driver->is_favourite = $driver->favouritedBy->isNotEmpty();
+    
+        unset($driver->favouritedBy);
         return response()->json([
             'success' => 1,
             'message' => 'Driver details retrieved successfully',
