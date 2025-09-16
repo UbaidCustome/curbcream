@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Content;
 use App\Models\Booking;
 use App\Models\Review;
+use App\Models\Favourite;
 use App\Traits\ApiResponser;
 use Illuminate\Container\Attributes\Auth;
 use Illuminate\Support\Facades\Auth as AuthFacade;
@@ -557,11 +558,14 @@ class AuthController extends Controller
     }
     public function getDriverDetail($id)
     {
+        $userId = auth()->id();
         $driver = User::where('role', 'driver')
             ->where('id', $id)
-            ->withCount('reviews')                // total reviews count
-            ->withAvg('reviews', 'rating')        // avg rating
-            ->with(['products'])  // driver ke products aur reviews ke sath reviewer user
+            ->withCount('reviews')
+            ->withAvg('reviews', 'rating')
+            ->with(['products', 'favouritedBy' => function ($q) use ($id) {
+                $q->where('user_id', $id);
+            }])
             ->first();
 
         if (!$driver) {
@@ -575,9 +579,9 @@ class AuthController extends Controller
         $driver->reviews_avg_rating = $driver->reviews_avg_rating
             ? round($driver->reviews_avg_rating, 1)
             : 0;
-        $driver->is_favourite = $driver->favouritedBy->isNotEmpty();
-    
-        unset($driver->favouritedBy);
+        $driver->is_favourite = Favourite::where('driver_id', $driver->id)
+            ->where('user_id', $userId)
+            ->exists();
         return response()->json([
             'success' => 1,
             'message' => 'Driver details retrieved successfully',

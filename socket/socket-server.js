@@ -94,7 +94,7 @@ app.post('/emit/new-schedule-booking', (req, res) => {
         }
 
         // Bas ek dafa emit karo
-        io.emit("newScheduleBooking", {
+        io.emit("newBooking", {
             booking,
             drivers,
         });
@@ -116,7 +116,7 @@ app.post('/emit/new-choose-booking', (req, res) => {
         }
 
         // Sirf ek driver ko emit karo
-        io.to(`driver_${driver_id}`).emit("newChooseBooking", {
+        io.to(`driver_${driver_id}`).emit("newBooking", {
             booking,
             user_id
         });
@@ -137,7 +137,7 @@ app.post('/emit/new-instant-booking', (req, res) => {
             return res.status(400).json({ error: 'Booking or driver_ids missing' });
         }
 
-        io.emit("newInstantBooking", {
+        io.emit("newBooking", {
             booking,
             driver_ids,
             status

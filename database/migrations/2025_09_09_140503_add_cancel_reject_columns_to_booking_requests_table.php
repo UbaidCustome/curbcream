@@ -11,14 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('booking_requests', function (Blueprint $table) {
-            // Cancel fields
-            $table->unsignedBigInteger('cancelled_by')->nullable()->after('status');
-            $table->string('cancelled_by_role')->nullable()->after('cancelled_by'); // user/driver/admin
-            $table->text('cancel_reason')->nullable()->after('cancelled_by_role');
-    
-            $table->foreign('cancelled_by')->references('id')->on('users')->onDelete('set null');
-        });
+        if (!Schema::hasColumn('booking_requests', 'cancelled_by')) {
+            Schema::table('booking_requests', function (Blueprint $table) {
+                $table->unsignedBigInteger('cancelled_by')->nullable()->after('status');
+                $table->string('cancelled_by_role')->nullable()->after('cancelled_by');
+                $table->text('cancel_reason')->nullable()->after('cancelled_by_role');
+                
+                $table->foreign('cancelled_by')->references('id')->on('users')->onDelete('set null');
+            });
+        }
     }
 
     /**

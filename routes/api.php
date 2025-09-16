@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\FavouriteController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\DisputeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -41,6 +42,8 @@ Route::prefix('auth')->group(function () {
         Route::post('/add-to-favourite', [FavouriteController::class, 'addToFavourite']);
         Route::get('/get-favourites', [FavouriteController::class, 'getFavourites']);
         Route::post('/post-review', [ReviewController::class, 'submitReview']);
+        Route::post('/post-disputes', [DisputeController::class, 'store']);
+        Route::get('/get-disputes', [DisputeController::class, 'getDisputes']);
 
         Route::post('add-product', [AuthController::class, 'addProduct']);
         Route::put('update-product/{id}', [AuthController::class, 'updateProduct']);
