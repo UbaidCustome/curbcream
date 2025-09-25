@@ -8,7 +8,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\DisputeController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-
+  
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
@@ -56,6 +56,8 @@ Route::prefix('auth')->group(function () {
         Route::get('/get-reviews/{driver_id}', [ReviewController::class, 'getDriverReviews']);
         Route::post('/driver/update-location', [AuthController::class, 'updateLocation']);
         Route::post('/drivers/search', [AuthController::class, 'searchDrivers']);
+        Route::post('/booking/{id}/tracking', [BookingController::class, 'getTrackingData']);
+        Route::get('/user/{id}/location', [AuthController::class, 'getLocation']);
         
         Route::post('/bookings/schedule', [BookingController::class, 'scheduleBooking']);
         Route::post('/bookings/choose', [BookingController::class, 'chooseTruckBooking']);
@@ -66,6 +68,12 @@ Route::prefix('auth')->group(function () {
         Route::get('/bookings/{id}', [BookingController::class, 'getBookingDetail']);
         Route::get('/booking-history', [BookingController::class, 'getBookingHistory']);
         Route::get('/scheduled-bookings', [BookingController::class, 'getScheduledBookings']);
+        Route::post('/bookings/{id}/complete', [BookingController::class, 'completeRide']);
+
+        Route::get('/user-detail/{id}', [AuthController::class, 'userDetails']);
+        Route::get('/driver-detail/{id}', [AuthController::class, 'driverDetails']);
+        Route::get('/current-booking', [BookingController::class, 'getCurrentBooking']);
+
         
         Route::get('/notifications', [NotificationController::class, 'index']);
         Route::post('/notifications/read/{id}', [NotificationController::class, 'markAsRead']);

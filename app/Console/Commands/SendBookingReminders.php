@@ -15,7 +15,7 @@ class SendScheduleBookingReminders extends Command
 
     public function handle()
     {
-        $now = Carbon::now();
+        $now = Carbon::now(); 
         \Log::info("⏰ ScheduleReminder running at: " . $now->toDateTimeString());
     
         $reminderTime = $now->copy()->addMinutes(15); // 15 min before ride

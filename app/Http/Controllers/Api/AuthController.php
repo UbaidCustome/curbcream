@@ -44,7 +44,6 @@ class AuthController extends Controller
             ], 400);
         }
     
-        // Create user
         $user = User::create([
             'email' => $request->email,
             'password' => bcrypt($request->password),
@@ -55,103 +54,6 @@ class AuthController extends Controller
         $user->otp = $otp;
         $user->otp_expires_at = now()->addMinutes(10);
         $user->save();
-    
-        /**
-         * ðŸ”¹ Dummy Bookings
-         */
-        if ($user->role === 'user') {
-            // User signup hua -> driver randomly pick karna hai
-            $driver = User::where('role', 'driver')->inRandomOrder()->first();
-        
-            if ($driver) {
-                // History bookings (past dates)
-                for ($i = 1; $i <= 2; $i++) {
-                    Booking::create([
-                        'user_id'        => $user->id,
-                        'driver_id'      => $driver->id,
-                        'passenger_name' => "Passenger-{$user->id}-{$i}",
-                        'location'       => "Old Ride Location {$i}",
-                        'request_type'   => 'Choose',
-                        'status'         => 'Completed',
-                        'ride_date'      => now()->subDays($i)->toDateString(),
-                        'ride_time'      => now()->subDays($i)->format('H:i:s'),
-                        'distance'       => rand(5, 25),
-                        'amount'         => rand(200, 1000),
-                    ]);
-                }
-        
-                // Upcoming booking (future date)
-                Booking::create([
-                    'user_id'        => $user->id,
-                    'driver_id'      => $driver->id,
-                    'passenger_name' => "Passenger-{$user->id}-future",
-                    'location'       => 'Future Ride Location',
-                    'request_type'   => 'Schedule',
-                    'status'         => 'Pending',
-                    'ride_date'      => now()->addDays(2)->toDateString(),
-                    'ride_time'      => now()->addHours(3)->format('H:i:s'),
-                    'distance'       => rand(10, 50),
-                    'amount'         => rand(200, 1000),
-                ]);
-            }
-        } elseif ($user->role === 'driver') {
-            // Driver signup hua -> user randomly pick karna hai
-            $customer = User::where('role', 'user')->inRandomOrder()->first();
-        
-            if ($customer) {
-                // History bookings (past dates)
-                for ($i = 1; $i <= 2; $i++) {
-                    Booking::create([
-                        'user_id'        => $customer->id,
-                        'driver_id'      => $user->id,
-                        'passenger_name' => "Passenger-{$customer->id}-{$i}",
-                        'location'       => "Old Ride Location {$i}",
-                        'request_type'   => 'Choose',
-                        'status'         => 'Completed',
-                        'ride_date'      => now()->subDays($i)->toDateString(),
-                        'ride_time'      => now()->subDays($i)->format('H:i:s'),
-                        'distance'       => rand(5, 25),
-                        'amount'         => rand(200, 1000),
-                    ]);
-                }
-        
-                // Upcoming booking (future date)
-                Booking::create([
-                    'user_id'        => $customer->id,
-                    'driver_id'      => $user->id,
-                    'passenger_name' => "Passenger-{$customer->id}-future",
-                    'location'       => 'Future Ride Location',
-                    'request_type'   => 'Schedule',
-                    'status'         => 'Pending',
-                    'ride_date'      => now()->addDays(2)->toDateString(),
-                    'ride_time'      => now()->addHours(3)->format('H:i:s'),
-                    'distance'       => rand(10, 50),
-                    'amount'         => rand(200, 1000),
-                ]);
-            }
-        }
-
-
-        if ($user->role === 'driver') {
-            // Do dummy users leke unse review dalwa dete hain
-            $reviewers = User::where('role', 'user')->take(2)->get();
-        
-            // Agar dummy reviewers exist karte hain tabhi insert karenge
-            foreach ($reviewers as $rev) {
-                // check duplicate na ho
-                $exists = Review::where('user_id', $rev->id)
-                                ->where('driver_id', $user->id)
-                                ->exists();
-                if (!$exists) {
-                    Review::create([
-                        'user_id'  => $rev->id,
-                        'driver_id'=> $user->id,
-                        'rating'   => rand(3, 5), // random rating between 3-5
-                        'review'   => 'This is a dummy review from user ' . $rev->id,
-                    ]);
-                }
-            }
-        }        
     
         return response()->json([
             'success' => 1,
@@ -398,11 +300,11 @@ class AuthController extends Controller
         if ($user->role == 'user') {
             $profileData['first_name'] = $request->first_name ?? $user->first_name;
             $profileData['last_name'] = $request->last_name ?? $user->last_name;
-            $profileData['name'] = $request->first_name.' '.$request->last_name;
+            $profileData['name'] = $request->first_name.' '.$request->last_name??$user->name;
             
             $profileData['avatar'] = $this->handleFileUpload($request, 'avatar', 'user/avatars', $user->avatar);
         } else {
-            $profileData['name'] = $request->first_name.' '.$request->last_name;
+            $profileData['name'] = $request->first_name.' '.$request->last_name??$user->name;
             $profileData['business_name'] = $request->business_name ?? $user->business_name;
             $profileData['location'] = $request->location ?? $user->location;
             $profileData['open_time'] = $request->open_time ?? $user->open_time;
@@ -613,34 +515,34 @@ class AuthController extends Controller
                 ->with(['favouritedBy' => function($q) use ($userId) {
                     $q->where('user_id', $userId);
                 }]);
-            // $query = User::where([
-            //         'role' => 'driver', 
-            //         'profile_completed' => true,
-            //         'is_active' => 1
-            //     ])
-            //     ->select(
-            //         'users.*',
-            //         DB::raw("ROUND(6371 * acos(
-            //             cos(radians($userLat)) 
-            //             * cos(radians(current_lat)) 
-            //             * cos(radians(current_lng) - radians($userLng)) 
-            //             + sin(radians($userLat)) 
-            //             * sin(radians(current_lat))
-            //         ), 2) AS distance")
-            //     )
-            //     ->withCount('reviews')
-            //     ->withAvg('reviews', 'rating')
-            //     ->with(['favouritedBy' => function($q) use ($userId) {
-            //         $q->where('user_id', $userId);
-            //     }])
-            //     ->having('distance', '<=', $maxDistance);
+            $query = User::where([
+                    'role' => 'driver', 
+                    'profile_completed' => true,
+                    'is_active' => 1
+                ])
+                ->select(
+                    'users.*',
+                    DB::raw("ROUND(6371 * acos(
+                        cos(radians($userLat)) 
+                        * cos(radians(current_lat)) 
+                        * cos(radians(current_lng) - radians($userLng)) 
+                        + sin(radians($userLat)) 
+                        * sin(radians(current_lat))
+                    ), 2) AS distance")
+                )
+                ->withCount('reviews')
+                ->withAvg('reviews', 'rating')
+                ->with(['favouritedBy' => function($q) use ($userId) {
+                    $q->where('user_id', $userId);
+                }])
+                ->having('distance', '<=', $maxDistance);
     
 
             if ($minRating > 0) {
                 $query->having('reviews_avg_rating', '>=', $minRating);
             }
     
-            // $query->orderBy('distance', 'asc');
+            $query->orderBy('distance', 'asc');
     
             $drivers = $query->get();
     
@@ -653,8 +555,8 @@ class AuthController extends Controller
     
             // ✅ Transform data
             $drivers->transform(function ($driver) {
-                // $driver->distance = number_format((float)$driver->distance, 2, '.', '');
-                // $driver->distance_miles = number_format((float)$driver->distance * 0.621371, 2, '.', '');
+                $driver->distance = number_format((float)$driver->distance, 2, '.', '');
+                $driver->distance_miles = number_format((float)$driver->distance * 0.621371, 2, '.', '');
                 
                 $driver->reviews_avg_rating = $driver->reviews_avg_rating
                     ? round((float)$driver->reviews_avg_rating, 1)
@@ -975,4 +877,72 @@ class AuthController extends Controller
             ], 500);
         }
     }
+    public function getLocation($id)
+    {
+        $user = User::findOrFail($id);
+        
+        return response()->json([
+            'success' => 1,
+            'lat' => $user->current_lat, // Ya booking location
+            'lng' => $user->current_lng
+        ]);
+    }
+    public function userDetails($id)
+    {
+        try {
+            $user = User::find($id);
+    
+            if (!$user) {
+                return response()->json([
+                    'success' => 0,
+                    'message' => 'User not found',
+                ], 404);
+            }
+    
+            return response()->json([
+                'success' => 1,
+                'id'    => $user->id,
+                'name'  => $user->name ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
+                'avatar' => $user->avatar ?? null,
+                'current_lat'   => $user->current_lat,
+                'current_lng'   => $user->current_lng,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Something went wrong: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+    
+    public function driverDetails($id)
+    {
+        try {
+            $driver = User::where('role', 'driver')->find($id);
+    
+            if (!$driver) {
+                return response()->json([
+                    'success' => 0,
+                    'message' => 'Driver not found',
+                ], 404);
+            }
+    
+            return response()->json([
+                'success' => 1,
+                'id'    => $driver->id,
+                'name'  => $driver->name 
+                            ?? trim(($driver->first_name ?? '') . ' ' . ($driver->last_name ?? '')) 
+                            ?: $driver->business_name,
+                'avatar' => $driver->avatar ?? $driver->profile_picture ?? null,
+                'current_lat'   => $driver->current_lat,
+                'current_lng'   => $driver->current_lng,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => 0,
+                'message' => 'Something went wrong: ' . $e->getMessage(),
+            ], 500);
+        }
+    }   
+    
 }

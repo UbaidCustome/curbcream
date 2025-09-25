@@ -25,7 +25,7 @@ class BookingController extends Controller
                 ], 403);
             }
             $request->validate([
-                'ride_time' => 'required|date_format:H:i',
+                'ride_time' => 'required',
                 'lat' => 'required|numeric',
                 'lng' => 'required|numeric',
                 'location' => 'nullable|string',
@@ -34,6 +34,15 @@ class BookingController extends Controller
     
             $now = Carbon::now();
             $rideDateTime = Carbon::today()->setTimeFromTimeString($request->ride_time);
+            $rideTimeFormatted = Carbon::createFromFormat('h:i A', $request->ride_time)->format('H:i:s');
+            try {
+                $rideTimeFormatted = Carbon::createFromFormat('h:i A', $request->ride_time)->format('H:i:s');
+            } catch (\Exception $e) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Invalid time format. Please use format like 10:45 PM',
+                ], 422);
+            }            
     
             if ($rideDateTime->lessThanOrEqualTo($now)) {
                 return response()->json([
@@ -85,23 +94,23 @@ class BookingController extends Controller
                 'user_id' => Auth::user()->id,
                 'request_type' => 'Schedule',
                 'status' => 'Pending',
-                'ride_time' => $request->ride_time,
+                'ride_time' => $rideTimeFormatted,
                 'lat' => $request->lat,
                 'lng' => $request->lng,
                 'location' => $request->location,
                 'special_instruction' => $request->special_instruction,
             ]);
     
-            foreach ($drivers as $driver) {
-                Notification::create([
-                    'user_id' => Auth::id(),
-                    'driver_id' => $driver->id,
-                    'booking_id' => $booking->id,
-                    'title' => 'New Booking Received',
-                    'message' => (Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name) 
-                                 . ' has requested a booking at ' . $request->ride_time,
-                ]);
-            }
+            // foreach ($drivers as $driver) {
+            //     Notification::create([
+            //         'user_id' => Auth::id(),
+            //         'driver_id' => $driver->id,
+            //         'booking_id' => $booking->id,
+            //         'title' => 'New Booking Received',
+            //         'message' => (Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name) 
+            //                      . ' has requested a booking at ' . $request->ride_time,
+            //     ]);
+            // }
     
             DB::commit(); // ✅ Transaction successful
             $bookingArray = $booking->toArray();
@@ -110,6 +119,7 @@ class BookingController extends Controller
     
             // ✅ Socket emit (transaction ke bahar)
             Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-schedule-booking', [
+                'type' => 'schedule',
                 'booking' => $bookingArray,
                 'drivers' => $drivers,
             ]);
@@ -155,24 +165,28 @@ class BookingController extends Controller
                 'lat' => $request->lat,
                 'lng' => $request->lng,
             ]);
-    
+            $booking->name = Auth::user()->name 
+                ?? (Auth::user()->first_name . ' ' . Auth::user()->last_name);
+            
             // ✅ Notification for driver
-            Notification::create([
-                'user_id' => Auth::id(),
-                'driver_id' => $request->driver_id,
-                'booking_id' => $booking->id,
-                'title' => 'New Booking Request',
-                'message' => (Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name)
-                             . ' has requested a booking from you.',
-            ]);
+            // Notification::create([
+            //     'user_id' => Auth::id(),
+            //     'driver_id' => $request->driver_id,
+            //     'booking_id' => $booking->id,
+            //     'title' => 'New Booking Request',
+            //     'message' => (Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name)
+            //                  . ' has requested a booking from you.',
+            // ]);
     
             DB::commit();
-    
+             
             // ✅ Socket emit (only for this driver)
             Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-choose-booking', [
+                'type'=>'choose',
                 'booking' => $booking,
                 'driver_id' => $request->driver_id,
-                'user_id'=>Auth::id()
+                'user_id'=>Auth::id(),
+                'name'=>Auth::user()->name ?? (Auth::user()->first_name.' '.Auth::user()->last_name),
             ]);
     
             return response()->json([
@@ -246,16 +260,16 @@ class BookingController extends Controller
                 'lng' => $request->lng,
             ]);
     
-            foreach ($drivers as $driver) {
-                Notification::create([
-                    'user_id' => Auth::id(),
-                    'driver_id' => $driver->id,
-                    'booking_id' => $booking->id,
-                    'title' => 'Instant Booking Request',
-                    'message' => (Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name) 
-                                 . ' mada a request!',
-                ]);
-            }
+            // foreach ($drivers as $driver) {
+            //     Notification::create([
+            //         'user_id' => Auth::id(),
+            //         'driver_id' => $driver->id,
+            //         'booking_id' => $booking->id,
+            //         'title' => 'Instant Booking Request',
+            //         'message' => (Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name) 
+            //                      . ' mada a request!',
+            //     ]);
+            // }
     
             DB::commit();
     
@@ -265,6 +279,7 @@ class BookingController extends Controller
     
             // ✅ Socket emit to all nearby drivers
             Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-instant-booking', [
+                'type'=>'instant',
                 'booking' => $bookingArray,
                 'driver_ids' => $drivers,
                 'status'=>'Pending'
@@ -288,6 +303,57 @@ class BookingController extends Controller
             ], 500);
         }
     }
+    public function completeRide($id)
+    {
+        try {
+            $booking = BookingRequest::findOrFail($id);
+            // Validation: Sirf driver hi complete kar sakta hai
+            if (Auth::user()->role !== 'driver' || Auth::id() != $booking->driver_id) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Only assigned driver can complete the ride.',
+                ], 403);
+            }
+    
+            if ($booking->status !== 'Accepted') {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Only accepted bookings can be completed.',
+                ], 400);
+            }
+            $user = User::where(['id'=>$booking->user_id])->first();
+    
+            DB::transaction(function () use ($booking) {
+                $booking->status = 'Completed';
+                $booking->save();
+    
+                // ✅ Socket event trigger karo
+                Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/ride-completed', [
+                    'booking_id' => $booking->id,
+                    'driver_id' => $booking->driver_id,
+                    'user_id' => $booking->user_id,
+                    'completed_at' => now()->toISOString(),
+                    'drivername'=> Auth::user()->name ??trim((Auth::user()->first_name ?? '') . ' ' . (Auth::user()->last_name ?? ''))?: Auth::user()->business_name,
+                    'username'=>  $user->name ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
+                    'status'=>'completed'
+                    
+                ]);
+            });
+    
+            return response()->json([
+                'status' => 1,
+                'message' => 'Ride completed successfully.',
+                'data' => $booking
+            ]);
+    
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Failed to complete ride.',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }    
     private function sendPushNotification($token, $data)
     {
         $fcmUrl = 'https://fcm.googleapis.com/fcm/send';
@@ -331,8 +397,6 @@ class BookingController extends Controller
             ]);
         }
     }
-
-
     public function getScheduledBookings()
     {
         if (!Auth::check()) {
@@ -341,60 +405,73 @@ class BookingController extends Controller
     
         try {
             $user = Auth::user();
-            $today = Carbon::now()->format('Y-m-d');
     
-            $bookings = DB::transaction(function () use ($user, $today) {
-                if ($user->role == 'driver') {
-                    return Booking::where('driver_id', $user->id)
-                        ->where('ride_date', '>=', $today)
+            $bookings = DB::transaction(function () use ($user) {
+                if ($user->role === 'driver') {
+                    // 🚚 Driver side → show passenger bookings
+                    return BookingRequest::where('driver_id', $user->id)
                         ->where('request_type', 'Schedule')
-                        ->with('user') // passenger data
-                        ->orderBy('ride_date', 'desc')
+                        ->where('status', 'Accepted')
+                        ->with('user')
+                        ->orderBy('id','desc')
                         ->get()
-                        ->map(function ($booking) {
+                        ->map(function ($booking) use ($user) {
+                            // distance (driver → pickup location)
+                            $distance = $this->calculateDistance(
+                                $user->current_lat,
+                                $user->current_lng,
+                                $booking->lat,
+                                $booking->lng
+                            );
+    
                             return [
                                 'id' => $booking->id,
-                                'passenger_name' => $booking->passenger_name,
+                                'user_id'=>$booking->user->id,
+                                'passenger_name' => $booking->user->name ??
+                                    trim(($booking->user->first_name ?? '') . ' ' . ($booking->user->last_name ?? '')) 
+                                    ?: $booking->user->business_name,
                                 'location' => $booking->location,
-                                'ride_date' => $booking->ride_date,
-                                'ride_time' => $booking->ride_time,
-                                'distance' => $booking->distance,
-                                'status' => $booking->status,
+                                'ride_date' => Carbon::parse($booking->ride_time)->format('n/j/Y'),
+                                'ride_time' => Carbon::parse($booking->ride_time)->format('h:i A'),
+                                'distance' => $distance,
                                 'request_type' => $booking->request_type,
-                                'passenger' => [
-                                    'id' => $booking->user->id,
-                                    'name' => $booking->driver->name ??
-                                        trim(($booking->driver->first_name ?? '') . ' ' . ($booking->driver->last_name ?? ''))
-                                        ?: $booking->driver->business_name,
-                                    'avatar' => $booking->user->avatar ?? null,
-                                ]
                             ];
                         });
                 } else {
-                    return Booking::where('user_id', $user->id)
-                        ->where('ride_date', '>=', $today)
+                    // 👤 User side → show driver bookings
+                    return BookingRequest::where('user_id', $user->id)
                         ->where('request_type', 'Schedule')
-                        ->with('driver') // driver data
-                        ->orderBy('ride_date', 'desc')
+                        ->where('status', 'Accepted')
+                        ->with('driver')
+                        ->orderBy('id','desc')
                         ->get()
                         ->map(function ($booking) {
+                            $driver = $booking->driver;
+                            $reviewsCount = $driver->reviews()->count();
+                            $avgRating = round($driver->reviews()->avg('rating'), 1);
+    
+                            // distance (driver → pickup location)
+                            $distance = $this->calculateDistance(
+                                $driver->current_lat,
+                                $driver->current_lng,
+                                $booking->lat,
+                                $booking->lng
+                            );
+    
                             return [
                                 'id' => $booking->id,
                                 'location' => $booking->location,
-                                'ride_date' => $booking->ride_date,
-                                'ride_time' => $booking->ride_time,
-                                'distance' => $booking->distance,
-                                'status' => $booking->status,
+                                'ride_date' => Carbon::parse($booking->ride_time)->format('n/j/Y'),
+                                'ride_time' => Carbon::parse($booking->ride_time)->format('h:i A'),
+                                'distance' => $distance,
                                 'request_type' => $booking->request_type,
-                                'amount' => $booking->amount ?? null,
                                 'driver' => [
-                                    'id' => $booking->driver->id,
-                                    'name' => $booking->driver->name ??
-                                        trim(($booking->driver->first_name ?? '') . ' ' . ($booking->driver->last_name ?? ''))
-                                        ?: $booking->driver->business_name,
-                                    'avatar' => $booking->driver->avatar ?? null,
-                                    'reviews_count' => $booking->driver->reviews()->count(),
-                                    'avg_rating' => round($booking->driver->reviews()->avg('rating'), 1),
+                                    'id' => $driver->id,
+                                    'name' => $driver->business_name ??
+                                        trim(($driver->first_name ?? '') . ' ' . ($driver->last_name ?? '')),
+                                    'avatar' => $driver->avatar ?? $driver->profile_picture ?? null,
+                                    'reviews_count' => $reviewsCount,
+                                    'avg_rating' => $avgRating,
                                 ]
                             ];
                         });
@@ -415,10 +492,33 @@ class BookingController extends Controller
             return response()->json([
                 'status' => 0,
                 'message' => 'Failed to fetch scheduled bookings. Please try again later.',
+                'error'   => $e->getMessage(), // 👉 Debug ke liye send kar do
             ], 500);
         }
     }
-
+    
+    /**
+     * Common function to calculate distance (Haversine formula)
+     */
+    private function calculateDistance($lat1, $lng1, $lat2, $lng2)
+    {
+        if (!$lat1 || !$lng1 || !$lat2 || !$lng2) {
+            return null;
+        }
+    
+        $earthRadius = 6371; // km
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+    
+        $a = sin($dLat / 2) * sin($dLat / 2) +
+             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+             sin($dLng / 2) * sin($dLng / 2);
+    
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        $distance = $earthRadius * $c;
+    
+        return number_format($distance, 2, '.', ''); // ✅ Always return "xx.xx"
+    }
 
     public function getBookingHistory()
     {
@@ -432,58 +532,73 @@ class BookingController extends Controller
     
             $bookings = DB::transaction(function () use ($user, $today) {
                 if ($user->role == 'driver') {
-                    return Booking::where('driver_id', $user->id)
-                        ->where('ride_date', '<', $today)
-                        ->with('user') // passenger data
-                        ->orderBy('ride_date', 'desc')
-                        ->get()
-                        ->map(function ($booking) {
-                            return [
-                                'id' => $booking->id,
-                                'passenger_name' => $booking->passenger_name,
-                                'location' => $booking->location,
-                                'ride_date' => $booking->ride_date,
-                                'ride_time' => $booking->ride_time,
-                                'distance' => $booking->distance,
-                                'status' => $booking->status,
-                                'request_type' => $booking->request_type,
-                                'amount' => $booking->amount ?? null,
-                                'passenger' => [
-                                    'id' => $booking->user->id,
-                                    'name' => $booking->driver->name ??
-                                        trim(($booking->driver->first_name ?? '') . ' ' . ($booking->driver->last_name ?? ''))
-                                        ?: $booking->driver->business_name,
-                                    'avatar' => $booking->user->avatar ?? null,
-                                ]
-                            ];
-                        });
-                } else {
-                    return Booking::where('user_id', $user->id)
-                        ->where('ride_date', '<', $today)
-                        ->with('driver') // driver data
-                        ->orderBy('ride_date', 'desc')
-                        ->get()
-                        ->map(function ($booking) {
-                            return [
-                                'id' => $booking->id,
-                                'location' => $booking->location,
-                                'ride_date' => $booking->ride_date,
-                                'ride_time' => $booking->ride_time,
-                                'distance' => $booking->distance,
-                                'status' => $booking->status,
-                                'request_type' => $booking->request_type,
-                                'amount' => $booking->amount ?? null,
-                                'driver' => [
-                                    'id' => $booking->driver->id,
-                                    'name' => $booking->driver->name ??
-                                        trim(($booking->driver->first_name ?? '') . ' ' . ($booking->driver->last_name ?? ''))
-                                        ?: $booking->driver->business_name,
-                                    'avatar' => $booking->driver->avatar ?? null,
-                                    'reviews_count' => $booking->driver->reviews()->count(),
-                                    'avg_rating' => round($booking->driver->reviews()->avg('rating'), 1),
-                                ]
-                            ];
-                        });
+                return BookingRequest::where('driver_id', $user->id)
+                    ->whereIn('status', ['Completed', 'Rejected', 'Cancelled'])
+                    ->with('user') // passenger data
+                    ->orderBy('ride_time', 'desc')
+                    ->get()
+                    ->map(function ($booking) {
+                        return [
+                            'id' => $booking->id,
+                            'passenger_name' => $booking->user->name ?? 
+                                trim(($booking->user->first_name ?? '') . ' ' . ($booking->user->last_name ?? '')) 
+                                ?: $booking->user->business_name,
+                            'location' => $booking->location,
+                            'ride_date' => Carbon::parse($booking->ride_time)->format('n/j/Y'),
+                            'ride_time' => Carbon::parse($booking->ride_time)->format('h:i A'),
+                            'status' => $booking->status,
+                            'request_type' => $booking->request_type,
+                            'passenger' => [
+                                'id' => $booking->user->id,
+                                'name' => $booking->user->name ?? 
+                                    trim(($booking->user->first_name ?? '') . ' ' . ($booking->user->last_name ?? '')) 
+                                    ?: $booking->user->business_name,
+                                'avatar' => $booking->user->avatar ?? null,
+                            ]
+                        ];
+                    });
+                }
+                else {
+                    return BookingRequest::where('user_id', $user->id)
+                    ->whereIn('status', ['Completed', 'Rejected', 'Cancelled'])
+                    ->with('driver') // driver data
+                    ->orderBy('ride_time', 'desc')
+                    ->get()
+                    ->map(function ($booking) {
+                        $driver = $booking->driver;
+                        
+                        // Handle null driver case
+                        $reviewsCount = 0;
+                        $avgRating = 0;
+                        $driverName = 'Unknown Driver';
+                        $driverAvatar = null;
+                        $driverId = null;
+                        
+                        if ($driver) {
+                            $reviewsCount = $driver->reviews()->count();
+                            $avgRating = round($driver->reviews()->avg('rating'), 1);
+                            $driverName = $driver->business_name ?? 
+                                trim(($driver->first_name ?? '') . ' ' . ($driver->last_name ?? ''));
+                            $driverAvatar = $driver->avatar??$driver->profile_picture;
+                            $driverId = $driver->id;
+                        }
+                        
+                        return [
+                            'id' => $booking->id,
+                            'location' => $booking->location,
+                            'ride_date' => Carbon::parse($booking->ride_time)->format('n/j/Y'),
+                            'ride_time' => Carbon::parse($booking->ride_time)->format('h:i A'),
+                            'status' => $booking->status,
+                            'request_type' => $booking->request_type,
+                            'driver' => [
+                                'id' => $driverId,
+                                'name' => $driverName,
+                                'avatar' => $driverAvatar,
+                                'reviews_count' => $reviewsCount,
+                                'avg_rating' => $avgRating,
+                            ]
+                        ];
+                    });
                 }
             });
     
@@ -505,7 +620,6 @@ class BookingController extends Controller
         }
     }
 
-    
     public function getBookingDetail($id)
     {
         if (!Auth::check()) {
@@ -516,7 +630,7 @@ class BookingController extends Controller
             $user = Auth::user();
     
             $booking = DB::transaction(function () use ($id) {
-                return Booking::with(['user', 'driver'])
+                return BookingRequest::with(['user', 'driver'])
                     ->where('id', $id)
                     ->first();
             });
@@ -528,41 +642,76 @@ class BookingController extends Controller
                 ], 404);
             }
     
-            // ✅ Agar driver hai
+            // Check if the user has permission to view this booking
+            if ($user->role == 'driver' && $booking->driver_id != $user->id) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Unauthorized to view this booking.'
+                ], 403);
+            }
+    
+            if ($user->role == 'user' && $booking->user_id != $user->id) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Unauthorized to view this booking.'
+                ], 403);
+            }
+    
+            // ✅ If user is driver
             if ($user->role == 'driver') {
                 $data = [
                     'id' => $booking->id,
-                    'passenger_name' => $booking->passenger_name,
+                    'passenger_name' => $booking->user->name ?? 
+                        trim(($booking->user->first_name ?? '') . ' ' . ($booking->user->last_name ?? '')) 
+                        ?: $booking->user->business_name,
                     'location' => $booking->location,
-                    'ride_date' => $booking->ride_date,
-                    'ride_time' => $booking->ride_time,
-                    'distance' => $booking->distance,
+                    'ride_date' => Carbon::parse($booking->ride_time)->format('n/j/Y'),
+                    'ride_time' => Carbon::parse($booking->ride_time)->format('h:i A'),
                     'status' => $booking->status,
                     'request_type' => $booking->request_type,
-                    'amount' => $booking->amount ?? null,
+                    'special_instruction' => $booking->special_instruction ?? null,
                     'passenger' => [
                         'id' => $booking->user->id,
-                        'name' => $booking->user->name,
+                        'name' => $booking->user->name ?? 
+                            trim(($booking->user->first_name ?? '') . ' ' . ($booking->user->last_name ?? '')) 
+                            ?: $booking->user->business_name,
                         'avatar' => $booking->user->avatar ?? null,
                     ]
                 ];
             } else {
-                // ✅ Agar passenger hai
+                // ✅ If user is passenger
+                $driver = $booking->driver;
+                
+                // Handle null driver case
+                $reviewsCount = 0;
+                $avgRating = 0;
+                $driverName = 'Unknown Driver';
+                $driverAvatar = null;
+                $driverId = null;
+                
+                if ($driver) {
+                    $reviewsCount = $driver->reviews()->count();
+                    $avgRating = round($driver->reviews()->avg('rating'), 1);
+                    $driverName = $driver->business_name ?? 
+                        trim(($driver->first_name ?? '') . ' ' . ($driver->last_name ?? ''));
+                    $driverAvatar = $driver->avatar??$driver->profile_picture;
+                    $driverId = $driver->id;
+                }
+                
                 $data = [
                     'id' => $booking->id,
                     'location' => $booking->location,
-                    'ride_date' => $booking->ride_date,
-                    'ride_time' => $booking->ride_time,
-                    'distance' => $booking->distance,
+                    'ride_date' => Carbon::parse($booking->ride_time)->format('n/j/Y'),
+                    'ride_time' => Carbon::parse($booking->ride_time)->format('h:i A'),
                     'status' => $booking->status,
                     'request_type' => $booking->request_type,
-                    'amount' => $booking->amount ?? null,
+                    'special_instruction' => $booking->special_instruction ?? null,
                     'driver' => [
-                        'id' => $booking->driver->id,
-                        'name' => $booking->driver->name,
-                        'avatar' => $booking->driver->avatar ?? null,
-                        'reviews_count' => $booking->driver->reviews()->count(),
-                        'avg_rating' => round($booking->driver->reviews()->avg('rating'), 1),
+                        'id' => $driverId,
+                        'name' => $driverName,
+                        'avatar' => $driverAvatar,
+                        'reviews_count' => $reviewsCount,
+                        'avg_rating' => $avgRating,
                     ]
                 ];
             }
@@ -614,10 +763,10 @@ class BookingController extends Controller
                     ], 400);
                 }
             } else {
-                if (!in_array($booking->status, ['Pending', 'Accepted'])) {
+                if (!in_array($booking->status, ['Pending', 'Accepted','Rejected'])) {
                     return response()->json([
                         'status' => 0,
-                        'message' => 'User can only cancel pending or accepted bookings.',
+                        'message' => 'Cannot cancel booking now.',
                     ], 400);
                 }
             }
@@ -732,6 +881,11 @@ class BookingController extends Controller
                         'driver_id' => $request->driver_id,
                         'status'=>'Accepted'
                     ]);
+                    Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/direct-join-room', [
+                        'booking_id' => $booking->id,
+                        'driver_id' => $request->driver_id, 
+                        'user_id' => $booking->user_id,
+                    ]);
                 }
     
                 return $booking;
@@ -755,5 +909,68 @@ class BookingController extends Controller
             ], 400);
         }
     }
-
+    public function getTrackingData($id)
+    {
+        try {
+            $booking = BookingRequest::with([
+                    'user:id,name,first_name,last_name,avatar,current_lat,current_lng',
+                    'driver:id,name,first_name,last_name,business_name,avatar,current_lat,current_lng'
+                ])
+                ->findOrFail($id);
+    
+            return response()->json([
+                'status' => 1,
+                'message' => 'Tracking data fetched successfully',
+                'data' => [
+                    'booking_id' => $booking->id,
+                    'user' => $booking->user,
+                    'driver' => $booking->driver,
+                    'status' => $booking->status,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Failed to fetch tracking data',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+    public function getCurrentBooking()
+    {
+        try {
+            $user = Auth::user();
+    
+            $booking = BookingRequest::where(function ($q) use ($user) {
+                    if ($user->role === 'driver') {
+                        $q->where('driver_id', $user->id);
+                    } else {
+                        $q->where('user_id', $user->id);
+                    }
+                })
+                ->whereIn('status', ['Accepted', 'In-progress'])
+                ->with(['driver', 'user'])
+                ->latest()
+                ->first();
+    
+            if (!$booking) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'No active booking found.'
+                ], 404);
+            }
+    
+            return response()->json([
+                'status' => 1,
+                'booking' => $booking
+            ], 200);
+    
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 0,
+                'message' => 'Failed to fetch current booking.',
+                'error'   => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

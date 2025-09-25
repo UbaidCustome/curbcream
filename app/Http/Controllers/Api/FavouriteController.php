@@ -61,16 +61,31 @@ class FavouriteController extends Controller
     public function getFavourites()
     {
         $user = auth()->user();
-    
-        $favourites = Favourite::with('driver')
+        
+        $favourites = Favourite::with(['driver.reviews'])
             ->where('user_id', $user->id)
             ->get()
-            ->pluck('driver'); // Sirf driver ki info chahiye
+            ->map(function($favourite) {
+                $driver = $favourite->driver;
+                
+                // Calculate rating count and average
+                $ratingCount = $driver->reviews->count();
+                $avgRating = $driver->reviews->avg('rating');
+                
+                // Add the calculated fields to the driver object
+                $driver->reviews_count = $ratingCount;
+                $driver->reviews_avg_rating = $avgRating ? (float) number_format($avgRating, 1) : 0;
+                
+                // Remove the reviews relation if you don't want it in the response
+                unset($driver->reviews);
+                
+                return $driver;
+            });
     
         return response()->json([
             'success' => 1,
-            'message'=>'Data Retrieved Successfully',
+            'message' => 'Data Retrieved Successfully',
             'data' => $favourites
         ]);
-    }    
+    }  
 }
