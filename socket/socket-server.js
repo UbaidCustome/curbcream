@@ -38,11 +38,22 @@ const io = socketIo(server, {
         credentials: true
     },
 });
+
+const normalizeBearerToken = (token = '') => token.replace(/^Bearer\s+/i, '').trim();
+
+const getSocketToken = (socket, data = {}) => {
+    const rawToken = socket.handshake.headers.authorization
+        || socket.handshake.headers.Authorization
+        || data.token
+        || '';
+
+    return normalizeBearerToken(rawToken);
+};
+
 io.use((socket, next) => {
     const handshake = socket.handshake;
     // console.log("Handshake => ",handshake);
-    const token = socket.handshake.headers.authorization 
-              || socket.handshake.headers.Authorization;
+    const token = getSocketToken(socket);
 
     if (!token) {
         console.log("⚠️ No Authorization header found");
@@ -58,7 +69,7 @@ io.on('connection', (socket) => {
     console.log('✅ Client connected:', socket.id);
     // console.log('🔐 Client auth:', socket.handshake.auth);
 
-    const token = socket.handshake.headers.authorization || socket.handshake.headers.Authorization;
+    const token = getSocketToken(socket);
     console.log('Socket Connected with token',token);
     if (!token) {
         console.log('⚠️  Client connected without token');
@@ -87,7 +98,12 @@ io.on('connection', (socket) => {
         // console.log("📍 Location update:", data);
     
         try {
-            const token = socket.handshake.headers.authorization || socket.handshake.headers.Authorization || data.token;
+            const token = getSocketToken(socket, data);
+
+            if (!token) {
+                console.log("⚠️ Missing token in updateLocation event");
+                return;
+            }
             
             const res = await axios.post(`${process.env.LARAVEL_API}/driver/update-location`, {
                 current_lat: data.current_lat,
@@ -114,9 +130,12 @@ io.on('connection', (socket) => {
         console.log("🚚 Driver tracking update:", data);
     
         try {
-            const token = socket.handshake.headers.authorization 
-                || socket.handshake.headers.Authorization 
-                || data.token;
+            const token = getSocketToken(socket, data);
+
+            if (!token) {
+                console.log("⚠️ Missing token in trackingDriver event");
+                return;
+            }
     
             console.log('driver_token', token);
     
@@ -143,7 +162,9 @@ io.on('connection', (socket) => {
             );
             console.log("✅ User location:", userResponse.data);
     
-            const userLocation = userResponse.data;
+            const userLocation = userResponse.data?.data ?? userResponse.data;
+            const userLat = userLocation?.lat ?? userLocation?.current_lat ?? null;
+            const userLng = userLocation?.lng ?? userLocation?.current_lng ?? null;
     
             // ✅ Step 3: Get user details (no headers)
             const userDetail = await axios.get(
@@ -156,6 +177,9 @@ io.on('connection', (socket) => {
                 `${process.env.LARAVEL_API}/driver-detail/${data.driver_id}`,
                 { headers }
             );
+
+            const userDetailPayload = userDetail.data?.data ?? userDetail.data;
+            const driverDetailPayload = driverDetail.data?.data ?? driverDetail.data;
     
             // ✅ Emit to booking room
             const emitData = {
@@ -164,13 +188,13 @@ io.on('connection', (socket) => {
                 user_id: data.user_id,
                 driver_lat: data.current_lat,
                 driver_lng: data.current_lng,
-                user_lat: userLocation.current_lat,
-                user_lng: userLocation.current_lng,
+                user_lat: userLat,
+                user_lng: userLng,
     
-                username: userDetail.data.name,
-                useravatar: userDetail.data.avatar,
-                drivername: driverDetail.data.name,
-                driveravatar: driverDetail.data.avatar
+                username: userDetailPayload?.name ?? null,
+                useravatar: userDetailPayload?.avatar ?? null,
+                drivername: driverDetailPayload?.name ?? null,
+                driveravatar: driverDetailPayload?.avatar ?? null
             };
     
             console.log('📤 Emitting driverNewLocation:', JSON.stringify(emitData, null, 2));
@@ -270,16 +294,22 @@ app.post('/emit/ride-completed', (req, res) => {
 });
 app.post('/emit/new-schedule-booking', (req, res) => {
     try {
-        const { type, booking, drivers } = req.body;
+        const { type, booking, drivers, driver_id_list } = req.body;
 
-        if (!booking || !drivers) {
+        const normalizedDrivers = Array.isArray(drivers) ? drivers : [];
+        const normalizedDriverIdList = Array.isArray(driver_id_list)
+            ? driver_id_list
+            : normalizedDrivers.map((driver) => driver?.id).filter((id) => id !== undefined && id !== null);
+
+        if (!booking || normalizedDrivers.length === 0) {
             return res.status(400).json({ error: 'Booking or drivers missing' });
         }
 
         io.emit("newBooking", {
             type,
             booking,
-            drivers,
+            drivers: normalizedDrivers,
+            driver_id_list: normalizedDriverIdList,
         });
 
         console.log("📢 Schedule booking emitted:", booking.id);
@@ -292,7 +322,23 @@ app.post('/emit/new-schedule-booking', (req, res) => {
 });
 app.post('/emit/new-choose-booking', (req, res) => {
     try {
-        const { type, booking, driver_id, name } = req.body;
+        const { type, booking, driver_id, name, drivers, selected_driver, driver_id_list } = req.body;
+
+        const normalizedDrivers = Array.isArray(drivers)
+            ? drivers
+            : (selected_driver ? [selected_driver] : []);
+
+        const normalizedDriverIdList = Array.isArray(driver_id_list)
+            ? driver_id_list
+            : normalizedDrivers
+                .map((driver) => driver?.id)
+                .concat(driver_id)
+                .filter((id, index, self) => id !== undefined && id !== null && self.indexOf(id) === index);
+
+        const normalizedSelectedDriver = selected_driver
+            || normalizedDrivers.find((driver) => driver?.id === driver_id)
+            || normalizedDrivers[0]
+            || null;
 
         if (!booking || !driver_id) {
             return res.status(400).json({ error: 'Missing booking or driver_id' });
@@ -301,7 +347,10 @@ app.post('/emit/new-choose-booking', (req, res) => {
             type,
             booking,
             driver_id,
-            name
+            name,
+            drivers: normalizedDrivers,
+            selected_driver: normalizedSelectedDriver,
+            driver_id_list: normalizedDriverIdList,
         });
 
         console.log(`📢 Choose booking emitted to driver ${driver_id}`);
@@ -314,20 +363,30 @@ app.post('/emit/new-choose-booking', (req, res) => {
 });
 app.post('/emit/new-instant-booking', (req, res) => {
     try {
-        const { type, booking, driver_ids, status } = req.body;
+        const { type, booking, drivers, driver_ids, driver_id_list, status } = req.body;
 
-        if (!booking || !driver_ids) {
+        const normalizedDrivers = Array.isArray(drivers)
+            ? drivers
+            : (Array.isArray(driver_ids) ? driver_ids : []);
+
+        const normalizedDriverIdList = Array.isArray(driver_id_list)
+            ? driver_id_list
+            : normalizedDrivers.map((driver) => driver?.id).filter((id) => id !== undefined && id !== null);
+
+        if (!booking || normalizedDrivers.length === 0) {
             return res.status(400).json({ error: 'Booking or driver_ids missing' });
         }
 
         io.emit("newBooking", {
             type,
             booking,
-            driver_ids,
+            drivers: normalizedDrivers,
+            driver_ids: normalizedDrivers,
+            driver_id_list: normalizedDriverIdList,
             status
         });
 
-        console.log(`📢 Instant booking sent to ${driver_ids.length} drivers`);
+        console.log(`📢 Instant booking sent to ${normalizedDrivers.length} drivers`);
         res.json({ success: true });
 
     } catch (err) {

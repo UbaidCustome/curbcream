@@ -13,6 +13,8 @@ const io = socketIo(server, {
   cors: { origin: "*" }
 });
 
+const normalizeBearerToken = (token = '') => token.replace(/^Bearer\s+/i, '').trim();
+
 // ✅ Socket events
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
@@ -22,12 +24,19 @@ io.on('connection', (socket) => {
     console.log("Location update:", data);
 
     try {
+      const token = normalizeBearerToken(data.token || '');
+
+      if (!token) {
+        console.log("⚠️ Missing token in updateLocation payload");
+        return;
+      }
+
       await axios.post(`${process.env.LARAVEL_API}/api/driver/update-location`, {
         driver_id: data.driver_id,
         current_lat: data.lat,
         current_lng: data.lng
       }, {
-        headers: { Authorization: `Bearer ${data.token}` }
+        headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
       console.error("DB update error:", err.message);
@@ -47,17 +56,29 @@ io.on('connection', (socket) => {
 
 // ✅ Laravel se booking emit karwane ke liye ek API bana rahe hain
 app.post('/emit/new-schedule-booking', (req, res) => {
-  const { booking, drivers } = req.body;
+  const { type = 'schedule', booking, drivers } = req.body;
 
   if (!booking || !drivers) {
     return res.status(400).json({ error: 'Booking or drivers missing' });
   }
 
+  const driverIdList = Array.isArray(drivers)
+    ? drivers.map((driver) => driver?.id).filter((id) => id !== undefined && id !== null)
+    : [];
+
   drivers.forEach(driver => {
     io.emit(`newScheduleBooking:${driver.id}`, {
       booking,
-      driver_id: driver.id
+      driver_id: driver.id,
+      driver
     });
+  });
+
+  io.emit("newBooking", {
+    type,
+    booking,
+    drivers,
+    driver_id_list: driverIdList
   });
 
   console.log("📢 New schedule booking emitted to drivers:", drivers.map(d => d.id));

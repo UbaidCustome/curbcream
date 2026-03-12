@@ -59,26 +59,30 @@ class BookingController extends Controller
             // }
     
             $radius = 5; // km
-            $pickupLat = $request->lat;
-            $pickupLng = $request->lng;
+            $pickupLat = (float) $request->lat;
+            $pickupLng = (float) $request->lng;
     
             $drivers = User::select(
                     'id',
                     'current_lat',
                     'current_lng',
-                    DB::raw("CAST(ROUND(6371 * acos(
+                    DB::raw("CAST(ROUND(6371 * acos(LEAST(1, GREATEST(-1,
                         cos(radians($pickupLat)) 
                         * cos(radians(current_lat)) 
                         * cos(radians(current_lng) - radians($pickupLng)) 
                         + sin(radians($pickupLat)) 
                         * sin(radians(current_lat))
-                    ), 2) AS DECIMAL(5,2)) AS distance")
+                    ))), 2) AS DECIMAL(5,2)) AS distance")
                 )
                 ->where('role', 'driver')
                 ->where('is_active', 1)
+                ->whereNotNull('current_lat')
+                ->whereNotNull('current_lng')
                 ->having('distance', '<=', $radius)
                 ->orderBy('distance', 'asc')
                 ->get();
+
+            $drivers = $this->formatDriverDistancePayload($drivers);
     
             if ($drivers->isEmpty()) {
                 return response()->json([
@@ -116,12 +120,14 @@ class BookingController extends Controller
             $bookingArray = $booking->toArray();
             $bookingArray['name'] = Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name;
             $bookingArray['avatar'] = Auth::user()->avatar ?? null;
+            $driverIdList = $drivers->pluck('id')->values();
     
             // ✅ Socket emit (transaction ke bahar)
             Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-schedule-booking', [
                 'type' => 'schedule',
                 'booking' => $bookingArray,
                 'drivers' => $drivers,
+                'driver_id_list' => $driverIdList,
             ]);
             return response()->json([
                 'status' => 1,
@@ -153,6 +159,39 @@ class BookingController extends Controller
                 'lat' => 'required|numeric',
                 'lng' => 'required|numeric',
             ]);
+
+            $selectedDriver = User::select('id', 'current_lat', 'current_lng')
+                ->where('id', $request->driver_id)
+                ->where('role', 'driver')
+                ->where('is_active', 1)
+                ->first();
+
+            if (!$selectedDriver) {
+                return response()->json([
+                    'status' => 0,
+                    'message' => 'Selected driver is not available.',
+                ], 404);
+            }
+
+            $distanceKm = $this->calculateDistance(
+                $request->lat,
+                $request->lng,
+                $selectedDriver->current_lat,
+                $selectedDriver->current_lng
+            );
+
+            $selectedDriverPayload = [
+                'id' => $selectedDriver->id,
+                'current_lat' => $selectedDriver->current_lat,
+                'current_lng' => $selectedDriver->current_lng,
+                'distance' => $distanceKm,
+                'distance_km' => $distanceKm,
+                'distance_miles' => $distanceKm !== null
+                    ? number_format((float) $distanceKm * 0.621371, 2, '.', '')
+                    : null,
+            ];
+
+            $driverIdList = [$selectedDriver->id];
     
             DB::beginTransaction();
     
@@ -179,20 +218,30 @@ class BookingController extends Controller
             // ]);
     
             DB::commit();
+
+            $bookingArray = $booking->toArray();
+            $bookingArray['name'] = Auth::user()->name
+                ?? (Auth::user()->first_name . ' ' . Auth::user()->last_name);
+            $bookingArray['avatar'] = Auth::user()->avatar ?? null;
+            $bookingArray['selected_driver'] = $selectedDriverPayload;
+            $bookingArray['driver_id_list'] = $driverIdList;
              
             // ✅ Socket emit (only for this driver)
             Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-choose-booking', [
                 'type'=>'choose',
-                'booking' => $booking,
-                'driver_id' => $request->driver_id,
+                'booking' => $bookingArray,
+                'driver_id' => $selectedDriver->id,
                 'user_id'=>Auth::id(),
                 'name'=>Auth::user()->name ?? (Auth::user()->first_name.' '.Auth::user()->last_name),
+                'drivers' => [$selectedDriverPayload],
+                'selected_driver' => $selectedDriverPayload,
+                'driver_id_list' => $driverIdList,
             ]);
     
             return response()->json([
                 'status' => 1,
                 'message' => 'Booking created successfully. Driver notified.',
-                'data' => $booking,
+                'data' => $bookingArray,
             ]);
     
         } catch (\Exception $e) {
@@ -220,27 +269,31 @@ class BookingController extends Controller
             ]);
     
             $radius = 5; // km
-            $pickupLat = $request->lat;
-            $pickupLng = $request->lng;
+            $pickupLat = (float) $request->lat;
+            $pickupLng = (float) $request->lng;
     
             // ✅ Find nearby drivers (5km radius)
             $drivers = User::select(
                     'id',
                     'current_lat',
                     'current_lng',
-                    DB::raw("CAST(ROUND(6371 * acos(
+                    DB::raw("CAST(ROUND(6371 * acos(LEAST(1, GREATEST(-1,
                         cos(radians($pickupLat)) 
                         * cos(radians(current_lat)) 
                         * cos(radians(current_lng) - radians($pickupLng)) 
                         + sin(radians($pickupLat)) 
                         * sin(radians(current_lat))
-                    ), 2) AS DECIMAL(5,2)) AS distance")
+                    ))), 2) AS DECIMAL(5,2)) AS distance")
                 )
                 ->where('role', 'driver')
                 ->where('is_active', 1)
+                ->whereNotNull('current_lat')
+                ->whereNotNull('current_lng')
                 ->having('distance', '<=', $radius)
                 ->orderBy('distance', 'asc')
                 ->get();
+
+            $drivers = $this->formatDriverDistancePayload($drivers);
             // return $drivers;
             if ($drivers->isEmpty()) {
                 return response()->json([
@@ -276,12 +329,15 @@ class BookingController extends Controller
             $bookingArray = $booking->toArray();
             $bookingArray['name'] = Auth::user()->name ?? Auth::user()->first_name.' '.Auth::user()->last_name;
             $bookingArray['avatar'] = Auth::user()->avatar ?? null;
+            $driverIdList = $drivers->pluck('id')->values();
     
             // ✅ Socket emit to all nearby drivers
             Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/new-instant-booking', [
                 'type'=>'instant',
                 'booking' => $bookingArray,
+                'drivers' => $drivers,
                 'driver_ids' => $drivers,
+                'driver_id_list' => $driverIdList,
                 'status'=>'Pending'
             ]);
     
@@ -518,6 +574,20 @@ class BookingController extends Controller
         $distance = $earthRadius * $c;
     
         return number_format($distance, 2, '.', ''); // ✅ Always return "xx.xx"
+    }
+
+    private function formatDriverDistancePayload($drivers)
+    {
+        return $drivers->map(function ($driver) {
+            $distanceKm = round((float) ($driver->distance ?? 0), 2);
+
+            // Keep `distance` for backward compatibility and add explicit unit fields.
+            $driver->distance = number_format($distanceKm, 2, '.', '');
+            $driver->distance_km = $driver->distance;
+            $driver->distance_miles = number_format($distanceKm * 0.621371, 2, '.', '');
+
+            return $driver;
+        });
     }
 
     public function getBookingHistory()
