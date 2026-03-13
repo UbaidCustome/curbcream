@@ -74,18 +74,35 @@ const getSocketToken = (socket, data = {}) => {
     return sanitizeToken(rawToken);
 };
 
-const toFixedOrNull = (value) => {
+const toFixedOrNull = (value, digits = 2) => {
     const parsed = Number.parseFloat(value);
-    return Number.isFinite(parsed) ? parsed.toFixed(2) : null;
+    return Number.isFinite(parsed) ? parsed.toFixed(digits) : null;
+};
+
+const formatDistance = (value) => {
+    const parsed = Number.parseFloat(value);
+
+    if (!Number.isFinite(parsed)) {
+        return null;
+    }
+
+    return parsed.toFixed(Math.abs(parsed) < 1 ? 4 : 2);
 };
 
 const resolveDistanceForDriver = (driver = {}) => {
-    const km = toFixedOrNull(driver?.distance_km ?? driver?.distance);
-    const miles = toFixedOrNull(
-        driver?.distance_miles ?? (km !== null ? Number.parseFloat(km) * 0.621371 : null)
-    );
+    const kmNumeric = Number.parseFloat(driver?.distance_km ?? driver?.distance);
 
-    return { km, miles };
+    if (!Number.isFinite(kmNumeric)) {
+        return { km: null, miles: null, meters: null };
+    }
+
+    const milesNumeric = kmNumeric * 0.621371;
+
+    return {
+        km: formatDistance(kmNumeric),
+        miles: formatDistance(milesNumeric),
+        meters: toFixedOrNull(kmNumeric * 1000, 1),
+    };
 };
 
 const calculateDistanceKm = (lat1, lng1, lat2, lng2) => {
@@ -109,7 +126,26 @@ const calculateDistanceKm = (lat1, lng1, lat2, lng2) => {
         * Math.sin(dLng / 2) * Math.sin(dLng / 2);
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return toFixedOrNull(earthRadius * c);
+    return earthRadius * c;
+};
+
+const resolveBookingDriverDistance = (booking = {}, driver = {}) => {
+    const calculatedKm = calculateDistanceKm(
+        booking?.lat,
+        booking?.lng,
+        driver?.current_lat,
+        driver?.current_lng
+    );
+
+    if (Number.isFinite(calculatedKm)) {
+        return {
+            km: formatDistance(calculatedKm),
+            miles: formatDistance(calculatedKm * 0.621371),
+            meters: toFixedOrNull(calculatedKm * 1000, 1),
+        };
+    }
+
+    return resolveDistanceForDriver(driver);
 };
 
 io.use((socket, next) => {
@@ -239,10 +275,14 @@ io.on('connection', (socket) => {
             const userLocation = userResponse.data?.data ?? userResponse.data;
             const userLat = userLocation?.lat ?? userLocation?.current_lat ?? null;
             const userLng = userLocation?.lng ?? userLocation?.current_lng ?? null;
-            const distanceKm = calculateDistanceKm(data.current_lat, data.current_lng, userLat, userLng);
-            const distanceMiles = toFixedOrNull(
-                distanceKm !== null ? Number.parseFloat(distanceKm) * 0.621371 : null
-            );
+            const distanceKmRaw = calculateDistanceKm(data.current_lat, data.current_lng, userLat, userLng);
+            const distanceKm = Number.isFinite(distanceKmRaw) ? formatDistance(distanceKmRaw) : null;
+            const distanceMiles = Number.isFinite(distanceKmRaw)
+                ? formatDistance(distanceKmRaw * 0.621371)
+                : null;
+            const distanceMeters = Number.isFinite(distanceKmRaw)
+                ? toFixedOrNull(distanceKmRaw * 1000, 1)
+                : null;
     
             // ✅ Step 3: Get user details (no headers)
             const userDetail = await axios.get(
@@ -271,8 +311,10 @@ io.on('connection', (socket) => {
 
                 distance_km: distanceKm,
                 distance_miles: distanceMiles,
+                distance_meters: distanceMeters,
                 user_distance_km: distanceKm,
                 user_distance_miles: distanceMiles,
+                user_distance_meters: distanceMeters,
     
                 username: userDetailPayload?.name ?? null,
                 useravatar: userDetailPayload?.avatar ?? null,
@@ -392,7 +434,7 @@ app.post('/emit/new-schedule-booking', (req, res) => {
 
         normalizedDrivers.forEach((driver) => {
             const driverId = driver.id;
-            const { km, miles } = resolveDistanceForDriver(driver);
+            const { km, miles, meters } = resolveBookingDriverDistance(booking, driver);
             const roomName = `driver_${driverId}`;
             const roomSize = io.sockets.adapter.rooms.get(roomName)?.size ?? 0;
 
@@ -404,6 +446,7 @@ app.post('/emit/new-schedule-booking', (req, res) => {
                 ...booking,
                 user_distance_km: km,
                 user_distance_miles: miles,
+                user_distance_meters: meters,
             };
 
             io.to(roomName).emit("newBooking", {
@@ -436,7 +479,7 @@ app.post('/emit/new-choose-booking', (req, res) => {
             || null;
 
         const emittedDriverId = normalizedSelectedDriver?.id ?? driver_id;
-        const { km, miles } = resolveDistanceForDriver(normalizedSelectedDriver || {});
+        const { km, miles, meters } = resolveBookingDriverDistance(booking, normalizedSelectedDriver || {});
         const roomName = `driver_${emittedDriverId}`;
         const roomSize = io.sockets.adapter.rooms.get(roomName)?.size ?? 0;
 
@@ -448,6 +491,7 @@ app.post('/emit/new-choose-booking', (req, res) => {
             ...booking,
             user_distance_km: km,
             user_distance_miles: miles,
+            user_distance_meters: meters,
         };
 
         if (!booking || !driver_id) {
@@ -486,7 +530,7 @@ app.post('/emit/new-instant-booking', (req, res) => {
 
         deliverableDrivers.forEach((driver) => {
             const driverId = driver.id;
-            const { km, miles } = resolveDistanceForDriver(driver);
+            const { km, miles, meters } = resolveBookingDriverDistance(booking, driver);
             const roomName = `driver_${driverId}`;
             const roomSize = io.sockets.adapter.rooms.get(roomName)?.size ?? 0;
 
@@ -498,6 +542,7 @@ app.post('/emit/new-instant-booking', (req, res) => {
                 ...booking,
                 user_distance_km: km,
                 user_distance_miles: miles,
+                user_distance_meters: meters,
             };
 
             io.to(roomName).emit("newBooking", {
@@ -524,15 +569,40 @@ app.post('/emit/driver-response', (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
+        const liveDistanceKm = calculateDistanceKm(
+            booking?.lat,
+            booking?.lng,
+            driver?.current_lat,
+            driver?.current_lng
+        );
+        const fallbackDistanceKm = Number.parseFloat(distance_km);
+        const fallbackDistanceMiles = Number.parseFloat(distance_miles);
+
+        const resolvedDistanceKmNumeric = Number.isFinite(liveDistanceKm)
+            ? liveDistanceKm
+            : (Number.isFinite(fallbackDistanceKm) ? fallbackDistanceKm : null);
+
+        const resolvedDistanceMilesNumeric = Number.isFinite(resolvedDistanceKmNumeric)
+            ? resolvedDistanceKmNumeric * 0.621371
+            : (Number.isFinite(fallbackDistanceMiles) ? fallbackDistanceMiles : null);
+
         const payload = {
             booking,
             driver,
             user: user ?? null,
             status,
-            distance_km: toFixedOrNull(distance_km),
-            distance_miles: toFixedOrNull(distance_miles),
-            user_distance_km: toFixedOrNull(distance_km),
-            user_distance_miles: toFixedOrNull(distance_miles),
+            distance_km: formatDistance(resolvedDistanceKmNumeric),
+            distance_miles: formatDistance(resolvedDistanceMilesNumeric),
+            distance_meters: toFixedOrNull(
+                Number.isFinite(resolvedDistanceKmNumeric) ? resolvedDistanceKmNumeric * 1000 : null,
+                1
+            ),
+            user_distance_km: formatDistance(resolvedDistanceKmNumeric),
+            user_distance_miles: formatDistance(resolvedDistanceMilesNumeric),
+            user_distance_meters: toFixedOrNull(
+                Number.isFinite(resolvedDistanceKmNumeric) ? resolvedDistanceKmNumeric * 1000 : null,
+                1
+            ),
         };
 
         if (booking?.driver_id) {
