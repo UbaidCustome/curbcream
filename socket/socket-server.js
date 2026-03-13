@@ -41,13 +41,37 @@ const io = socketIo(server, {
 
 const normalizeBearerToken = (token = '') => token.replace(/^Bearer\s+/i, '').trim();
 
+const sanitizeToken = (token = '') => {
+    const normalized = normalizeBearerToken(String(token || '').trim());
+
+    if (!normalized) {
+        return '';
+    }
+
+    const lowered = normalized.toLowerCase();
+    if (lowered === 'undefined' || lowered === 'null' || lowered === 'false' || lowered === 'nan') {
+        return '';
+    }
+
+    return normalized;
+};
+
 const getSocketToken = (socket, data = {}) => {
-    const rawToken = socket.handshake.headers.authorization
+    const rawToken = data.token
+        || data.access_token
+        || data.accessToken
+        || data.authToken
+        || data.Authorization
+        || data.authorization
+        || socket.handshake.auth?.token
+        || socket.handshake.auth?.accessToken
+        || socket.handshake.query?.token
+        || socket.handshake.headers.authorization
         || socket.handshake.headers.Authorization
-        || data.token
+        || socket.token
         || '';
 
-    return normalizeBearerToken(rawToken);
+    return sanitizeToken(rawToken);
 };
 
 const toFixedOrNull = (value) => {
@@ -113,17 +137,25 @@ io.on('connection', (socket) => {
         console.log('⚠️  Client connected without token');
     }
 
-    socket.on("registerUser", (data) => {
-        const { userId, role } = data;
+    socket.on("registerUser", (data = {}) => {
+        const userId = data.userId ?? data.user_id ?? data.id;
+        const role = String(data.role ?? data.userRole ?? '').trim().toLowerCase();
+
+        if (!userId) {
+            console.log(`❌ registerUser missing userId/user_id in payload: ${JSON.stringify(data)}`);
+            return;
+        }
 
         if (role === 'driver') {
             socket.join(`driver_${userId}`);
             console.log(`🚚 Driver ${userId} joined room driver_${userId}`);
+            socket.emit('registerUserAck', { user_id: userId, role: 'driver', room: `driver_${userId}` });
         } else if (role === 'user') {
             socket.join(`user_${userId}`);
             console.log(`👤 User ${userId} joined room user_${userId}`);
+            socket.emit('registerUserAck', { user_id: userId, role: 'user', room: `user_${userId}` });
         } else {
-            console.log(`❌ Unknown role: ${role} for userId: ${userId}`);
+            console.log(`❌ Unknown role: ${role || 'N/A'} for userId: ${userId}`);
         }
     });
 
@@ -161,7 +193,11 @@ io.on('connection', (socket) => {
             // console.log(`Location Update for user ${data.user_id}`)
     
         } catch (err) {
-            console.error("❌ DB update error:", err.response?.data || err.message);
+            if (err.response?.status === 401) {
+                console.error("❌ DB update error: unauthenticated token for updateLocation event");
+            } else {
+                console.error("❌ DB update error:", err.response?.data || err.message);
+            }
         }
     });
     socket.on("trackingDriver", async (data) => {
@@ -250,7 +286,11 @@ io.on('connection', (socket) => {
     
             console.log(`📡 Location update sent for booking_${data.booking_id}`);
         } catch (err) {
-            console.error("❌ Tracking error:", err.response?.data || err.message);
+            if (err.response?.status === 401) {
+                console.error("❌ Tracking error: unauthenticated token for trackingDriver event");
+            } else {
+                console.error("❌ Tracking error:", err.response?.data || err.message);
+            }
         }
     });
 
@@ -353,6 +393,12 @@ app.post('/emit/new-schedule-booking', (req, res) => {
         normalizedDrivers.forEach((driver) => {
             const driverId = driver.id;
             const { km, miles } = resolveDistanceForDriver(driver);
+            const roomName = `driver_${driverId}`;
+            const roomSize = io.sockets.adapter.rooms.get(roomName)?.size ?? 0;
+
+            if (roomSize === 0) {
+                console.log(`⚠️ No active sockets in ${roomName} for schedule booking ${booking.id}`);
+            }
 
             const bookingPayload = {
                 ...booking,
@@ -360,7 +406,7 @@ app.post('/emit/new-schedule-booking', (req, res) => {
                 user_distance_miles: miles,
             };
 
-            io.to(`driver_${driverId}`).emit("newBooking", {
+            io.to(roomName).emit("newBooking", {
                 type,
                 booking: bookingPayload,
                 driver_id: driverId,
@@ -391,6 +437,12 @@ app.post('/emit/new-choose-booking', (req, res) => {
 
         const emittedDriverId = normalizedSelectedDriver?.id ?? driver_id;
         const { km, miles } = resolveDistanceForDriver(normalizedSelectedDriver || {});
+        const roomName = `driver_${emittedDriverId}`;
+        const roomSize = io.sockets.adapter.rooms.get(roomName)?.size ?? 0;
+
+        if (roomSize === 0) {
+            console.log(`⚠️ No active sockets in ${roomName} for choose booking ${booking.id}`);
+        }
 
         const bookingPayload = {
             ...booking,
@@ -401,7 +453,7 @@ app.post('/emit/new-choose-booking', (req, res) => {
         if (!booking || !driver_id) {
             return res.status(400).json({ error: 'Missing booking or driver_id' });
         }
-        io.to(`driver_${emittedDriverId}`).emit("newBooking", {
+        io.to(roomName).emit("newBooking", {
             type,
             booking: bookingPayload,
             driver_id: emittedDriverId,
@@ -435,6 +487,12 @@ app.post('/emit/new-instant-booking', (req, res) => {
         deliverableDrivers.forEach((driver) => {
             const driverId = driver.id;
             const { km, miles } = resolveDistanceForDriver(driver);
+            const roomName = `driver_${driverId}`;
+            const roomSize = io.sockets.adapter.rooms.get(roomName)?.size ?? 0;
+
+            if (roomSize === 0) {
+                console.log(`⚠️ No active sockets in ${roomName} for instant booking ${booking.id}`);
+            }
 
             const bookingPayload = {
                 ...booking,
@@ -442,7 +500,7 @@ app.post('/emit/new-instant-booking', (req, res) => {
                 user_distance_miles: miles,
             };
 
-            io.to(`driver_${driverId}`).emit("newBooking", {
+            io.to(roomName).emit("newBooking", {
                 type,
                 booking: bookingPayload,
                 driver_id: driverId,
