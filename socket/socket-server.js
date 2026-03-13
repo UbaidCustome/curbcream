@@ -528,11 +528,14 @@ app.post('/emit/new-instant-booking', (req, res) => {
             return res.status(400).json({ error: 'Booking or driver_ids missing' });
         }
 
+        const targetRooms = [];
+
         deliverableDrivers.forEach((driver) => {
             const driverId = driver.id;
             const { km, miles, meters } = resolveBookingDriverDistance(booking, driver);
             const roomName = `driver_${driverId}`;
             const roomSize = io.sockets.adapter.rooms.get(roomName)?.size ?? 0;
+            targetRooms.push({ driver_id: driverId, room: roomName, connected: roomSize > 0, sockets: roomSize });
 
             if (roomSize === 0) {
                 console.log(`⚠️ No active sockets in ${roomName} for instant booking ${booking.id}`);
@@ -553,7 +556,7 @@ app.post('/emit/new-instant-booking', (req, res) => {
             });
         });
 
-        console.log(`📢 Instant booking sent to ${deliverableDrivers.length} drivers`);
+        console.log(`📢 Instant booking sent to ${deliverableDrivers.length} drivers`, targetRooms);
         res.json({ success: true, sent_to: deliverableDrivers.length });
 
     } catch (err) {

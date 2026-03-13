@@ -61,26 +61,8 @@ class BookingController extends Controller
             $radius = 5; // km
             $pickupLat = (float) $request->lat;
             $pickupLng = (float) $request->lng;
-    
-            $drivers = User::select(
-                    'id',
-                    'current_lat',
-                    'current_lng',
-                    DB::raw("CAST(ROUND(6371 * acos(LEAST(1, GREATEST(-1,
-                        cos(radians($pickupLat)) 
-                        * cos(radians(current_lat)) 
-                        * cos(radians(current_lng) - radians($pickupLng)) 
-                        + sin(radians($pickupLat)) 
-                        * sin(radians(current_lat))
-                    ))), 2) AS DECIMAL(5,2)) AS distance")
-                )
-                ->where('role', 'driver')
-                ->where('is_active', 1)
-                ->whereNotNull('current_lat')
-                ->whereNotNull('current_lng')
-                ->having('distance', '<=', $radius)
-                ->orderBy('distance', 'asc')
-                ->get();
+
+            $drivers = $this->getNearbyDrivers($pickupLat, $pickupLng, $radius);
 
             $drivers = $this->formatDriverDistancePayload($drivers);
     
@@ -271,29 +253,24 @@ class BookingController extends Controller
             $radius = 5; // km
             $pickupLat = (float) $request->lat;
             $pickupLng = (float) $request->lng;
-    
+
             // ✅ Find nearby drivers (5km radius)
-            $drivers = User::select(
-                    'id',
-                    'current_lat',
-                    'current_lng',
-                    DB::raw("CAST(ROUND(6371 * acos(LEAST(1, GREATEST(-1,
-                        cos(radians($pickupLat)) 
-                        * cos(radians(current_lat)) 
-                        * cos(radians(current_lng) - radians($pickupLng)) 
-                        + sin(radians($pickupLat)) 
-                        * sin(radians(current_lat))
-                    ))), 2) AS DECIMAL(5,2)) AS distance")
-                )
-                ->where('role', 'driver')
-                ->where('is_active', 1)
-                ->whereNotNull('current_lat')
-                ->whereNotNull('current_lng')
-                ->having('distance', '<=', $radius)
-                ->orderBy('distance', 'asc')
-                ->get();
+            $drivers = $this->getNearbyDrivers($pickupLat, $pickupLng, $radius);
 
             $drivers = $this->formatDriverDistancePayload($drivers);
+            \Log::info('Instant booking nearby drivers resolved', [
+                'user_id' => Auth::id(),
+                'pickup_lat' => $pickupLat,
+                'pickup_lng' => $pickupLng,
+                'driver_ids' => $drivers->pluck('id')->values(),
+                'drivers' => $drivers->map(function ($driver) {
+                    return [
+                        'id' => $driver->id,
+                        'distance_km' => $driver->distance_km ?? null,
+                        'last_location_update' => $driver->last_location_update ?? null,
+                    ];
+                })->values(),
+            ]);
             // return $drivers;
             if ($drivers->isEmpty()) {
                 return response()->json([
@@ -574,6 +551,45 @@ class BookingController extends Controller
         $distance = $earthRadius * $c;
     
         return number_format($distance, 2, '.', ''); // ✅ Always return "xx.xx"
+    }
+
+    private function getNearbyDrivers(float $pickupLat, float $pickupLng, float $radius = 5, int $freshWindowMinutes = 10)
+    {
+        $distanceSql = "CAST(ROUND(6371 * acos(LEAST(1, GREATEST(-1,
+            cos(radians($pickupLat))
+            * cos(radians(current_lat))
+            * cos(radians(current_lng) - radians($pickupLng))
+            + sin(radians($pickupLat))
+            * sin(radians(current_lat))
+        ))), 2) AS DECIMAL(5,2))";
+
+        $baseQuery = User::select(
+                'id',
+                'current_lat',
+                'current_lng',
+                'last_location_update',
+                DB::raw("{$distanceSql} AS distance")
+            )
+            ->where('role', 'driver')
+            ->where('is_active', 1)
+            ->whereNotNull('current_lat')
+            ->whereNotNull('current_lng');
+
+        $freshDrivers = (clone $baseQuery)
+            ->whereNotNull('last_location_update')
+            ->where('last_location_update', '>=', now()->subMinutes($freshWindowMinutes))
+            ->having('distance', '<=', $radius)
+            ->orderBy('distance', 'asc')
+            ->get();
+
+        if ($freshDrivers->isNotEmpty()) {
+            return $freshDrivers;
+        }
+
+        return (clone $baseQuery)
+            ->having('distance', '<=', $radius)
+            ->orderBy('distance', 'asc')
+            ->get();
     }
 
     private function formatDriverDistancePayload($drivers)

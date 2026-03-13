@@ -102,6 +102,11 @@ class AuthController extends Controller
         //         'message' => 'Please complete your profile before logging in.',
         //     ], 403);
         // }
+        if ($user->role === 'driver' && (int) $user->is_active !== 1) {
+            $user->is_active = 1;
+            $user->save();
+        }
+
         $token = $user->createToken('curbcream')->plainTextToken;
         if ($user->role === 'driver') {
             $user->loadCount('reviews');
@@ -376,6 +381,10 @@ class AuthController extends Controller
                 'success' => 0,
                 'message' => 'User not authenticated',
             ], 401);
+        }
+        if ($user->role === 'driver' && (int) $user->is_active !== 0) {
+            $user->is_active = 0;
+            $user->save();
         }
         $user->tokens()->delete();
         return response()->json([
@@ -858,6 +867,10 @@ class AuthController extends Controller
     
             $user->current_lat = $request->current_lat;
             $user->current_lng = $request->current_lng;
+            $user->last_location_update = now();
+            if ($user->role === 'driver') {
+                $user->is_active = 1;
+            }
     
             $user->save();
     
