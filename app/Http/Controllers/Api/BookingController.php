@@ -904,6 +904,8 @@ class BookingController extends Controller
                     ->firstOrFail();
     
                 $driver = User::findOrFail($request->driver_id);
+                $user = User::select('id', 'name', 'first_name', 'last_name', 'avatar', 'current_lat', 'current_lng')
+                    ->find($booking->user_id);
     
                 // RULE 1: Sirf Pending state me accept/reject allowed hai
                 if ($booking->status === 'Pending') {
@@ -936,12 +938,49 @@ class BookingController extends Controller
                 }
     
                 $booking->save();
+
+                $distanceKm = $this->calculateDistance(
+                    $driver->current_lat,
+                    $driver->current_lng,
+                    $booking->lat,
+                    $booking->lng
+                );
+                $distanceMiles = $distanceKm !== null
+                    ? number_format((float) $distanceKm * 0.621371, 2, '.', '')
+                    : null;
+
+                $driverPayload = [
+                    'id' => $driver->id,
+                    'name' => $driver->business_name
+                        ?? $driver->name
+                        ?? trim(($driver->first_name ?? '') . ' ' . ($driver->last_name ?? '')),
+                    'avatar' => $driver->avatar ?? $driver->profile_picture ?? null,
+                    'current_lat' => $driver->current_lat,
+                    'current_lng' => $driver->current_lng,
+                ];
+
+                $userPayload = $user ? [
+                    'id' => $user->id,
+                    'name' => $user->name
+                        ?? trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? '')),
+                    'avatar' => $user->avatar ?? null,
+                    'current_lat' => $user->current_lat,
+                    'current_lng' => $user->current_lng,
+                ] : null;
+
+                $bookingPayload = $booking->toArray();
+                $bookingPayload['user_distance_km'] = $distanceKm;
+                $bookingPayload['user_distance_miles'] = $distanceMiles;
+                $bookingPayload['driver_id_list'] = $booking->driver_id ? [$booking->driver_id] : [];
     
                 // Socket emit -> driver response
                 Http::withoutVerifying()->post(env('SOCKET_SERVER_URL').'/emit/driver-response', [
-                    'booking' => $booking,
-                    'driver'  => $driver,
+                    'booking' => $bookingPayload,
+                    'driver'  => $driverPayload,
+                    'user' => $userPayload,
                     'status'  => $request->status,
+                    'distance_km' => $distanceKm,
+                    'distance_miles' => $distanceMiles,
                 ]);
     
                 // Agar booking close karni ho

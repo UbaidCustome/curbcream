@@ -50,6 +50,44 @@ const getSocketToken = (socket, data = {}) => {
     return normalizeBearerToken(rawToken);
 };
 
+const toFixedOrNull = (value) => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed.toFixed(2) : null;
+};
+
+const resolveDistanceForDriver = (driver = {}) => {
+    const km = toFixedOrNull(driver?.distance_km ?? driver?.distance);
+    const miles = toFixedOrNull(
+        driver?.distance_miles ?? (km !== null ? Number.parseFloat(km) * 0.621371 : null)
+    );
+
+    return { km, miles };
+};
+
+const calculateDistanceKm = (lat1, lng1, lat2, lng2) => {
+    const pLat1 = Number.parseFloat(lat1);
+    const pLng1 = Number.parseFloat(lng1);
+    const pLat2 = Number.parseFloat(lat2);
+    const pLng2 = Number.parseFloat(lng2);
+
+    if (![pLat1, pLng1, pLat2, pLng2].every(Number.isFinite)) {
+        return null;
+    }
+
+    const earthRadius = 6371;
+    const dLat = (pLat2 - pLat1) * (Math.PI / 180);
+    const dLng = (pLng2 - pLng1) * (Math.PI / 180);
+
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2)
+        + Math.cos(pLat1 * (Math.PI / 180))
+        * Math.cos(pLat2 * (Math.PI / 180))
+        * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return toFixedOrNull(earthRadius * c);
+};
+
 io.use((socket, next) => {
     const handshake = socket.handshake;
     // console.log("Handshake => ",handshake);
@@ -165,6 +203,10 @@ io.on('connection', (socket) => {
             const userLocation = userResponse.data?.data ?? userResponse.data;
             const userLat = userLocation?.lat ?? userLocation?.current_lat ?? null;
             const userLng = userLocation?.lng ?? userLocation?.current_lng ?? null;
+            const distanceKm = calculateDistanceKm(data.current_lat, data.current_lng, userLat, userLng);
+            const distanceMiles = toFixedOrNull(
+                distanceKm !== null ? Number.parseFloat(distanceKm) * 0.621371 : null
+            );
     
             // ✅ Step 3: Get user details (no headers)
             const userDetail = await axios.get(
@@ -190,6 +232,11 @@ io.on('connection', (socket) => {
                 driver_lng: data.current_lng,
                 user_lat: userLat,
                 user_lng: userLng,
+
+                distance_km: distanceKm,
+                distance_miles: distanceMiles,
+                user_distance_km: distanceKm,
+                user_distance_miles: distanceMiles,
     
                 username: userDetailPayload?.name ?? null,
                 useravatar: userDetailPayload?.avatar ?? null,
@@ -294,26 +341,52 @@ app.post('/emit/ride-completed', (req, res) => {
 });
 app.post('/emit/new-schedule-booking', (req, res) => {
     try {
-        const { type, booking, drivers, driver_id_list } = req.body;
+        const { type, booking, drivers } = req.body;
 
-        const normalizedDrivers = Array.isArray(drivers) ? drivers : [];
-        const normalizedDriverIdList = Array.isArray(driver_id_list)
-            ? driver_id_list
-            : normalizedDrivers.map((driver) => driver?.id).filter((id) => id !== undefined && id !== null);
+        const normalizedDrivers = (Array.isArray(drivers) ? drivers : [])
+            .filter((driver) => driver?.id !== undefined && driver?.id !== null);
 
         if (!booking || normalizedDrivers.length === 0) {
             return res.status(400).json({ error: 'Booking or drivers missing' });
         }
 
-        io.emit("newBooking", {
-            type,
-            booking,
-            drivers: normalizedDrivers,
-            driver_id_list: normalizedDriverIdList,
+        normalizedDrivers.forEach((driver) => {
+            const driverId = driver.id;
+            const { km, miles } = resolveDistanceForDriver(driver);
+
+            const driverPayload = {
+                id: driverId,
+                current_lat: driver?.current_lat ?? null,
+                current_lng: driver?.current_lng ?? null,
+                distance: km,
+                distance_km: km,
+                distance_miles: miles,
+            };
+
+            const bookingPayload = {
+                ...booking,
+                user_distance_km: km,
+                user_distance_miles: miles,
+            };
+
+            io.to(`driver_${driverId}`).emit("newBooking", {
+                type,
+                booking: bookingPayload,
+                driver_id: driverId,
+                driver: driverPayload,
+                drivers: [driverPayload],
+                selected_driver: driverPayload,
+                driver_id_list: [driverId],
+                distance_km: km,
+                distance_miles: miles,
+                user_distance_km: km,
+                user_distance_miles: miles,
+                status: booking?.status ?? 'Pending',
+            });
         });
 
-        console.log("📢 Schedule booking emitted:", booking.id);
-        res.json({ success: true });
+        console.log(`📢 Schedule booking emitted to ${normalizedDrivers.length} drivers:`, booking.id);
+        res.json({ success: true, sent_to: normalizedDrivers.length });
 
     } catch (err) {
         console.error("❌ Error in /emit/new-schedule-booking:", err.message);
@@ -322,38 +395,55 @@ app.post('/emit/new-schedule-booking', (req, res) => {
 });
 app.post('/emit/new-choose-booking', (req, res) => {
     try {
-        const { type, booking, driver_id, name, drivers, selected_driver, driver_id_list } = req.body;
+        const { type, booking, driver_id, name, drivers, selected_driver } = req.body;
 
         const normalizedDrivers = Array.isArray(drivers)
             ? drivers
             : (selected_driver ? [selected_driver] : []);
-
-        const normalizedDriverIdList = Array.isArray(driver_id_list)
-            ? driver_id_list
-            : normalizedDrivers
-                .map((driver) => driver?.id)
-                .concat(driver_id)
-                .filter((id, index, self) => id !== undefined && id !== null && self.indexOf(id) === index);
 
         const normalizedSelectedDriver = selected_driver
             || normalizedDrivers.find((driver) => driver?.id === driver_id)
             || normalizedDrivers[0]
             || null;
 
+        const emittedDriverId = normalizedSelectedDriver?.id ?? driver_id;
+        const { km, miles } = resolveDistanceForDriver(normalizedSelectedDriver || {});
+
+        const driverPayload = {
+            id: emittedDriverId,
+            current_lat: normalizedSelectedDriver?.current_lat ?? null,
+            current_lng: normalizedSelectedDriver?.current_lng ?? null,
+            distance: km,
+            distance_km: km,
+            distance_miles: miles,
+        };
+
+        const bookingPayload = {
+            ...booking,
+            user_distance_km: km,
+            user_distance_miles: miles,
+        };
+
         if (!booking || !driver_id) {
             return res.status(400).json({ error: 'Missing booking or driver_id' });
         }
-        io.to(`driver_${driver_id}`).emit("newBooking", {
+        io.to(`driver_${emittedDriverId}`).emit("newBooking", {
             type,
-            booking,
-            driver_id,
+            booking: bookingPayload,
+            driver_id: emittedDriverId,
             name,
-            drivers: normalizedDrivers,
-            selected_driver: normalizedSelectedDriver,
-            driver_id_list: normalizedDriverIdList,
+            driver: driverPayload,
+            drivers: [driverPayload],
+            selected_driver: driverPayload,
+            driver_id_list: [emittedDriverId],
+            distance_km: km,
+            distance_miles: miles,
+            user_distance_km: km,
+            user_distance_miles: miles,
+            status: booking?.status ?? 'Pending',
         });
 
-        console.log(`📢 Choose booking emitted to driver ${driver_id}`);
+        console.log(`📢 Choose booking emitted to driver ${emittedDriverId}`);
         res.json({ success: true });
 
     } catch (err) {
@@ -363,31 +453,57 @@ app.post('/emit/new-choose-booking', (req, res) => {
 });
 app.post('/emit/new-instant-booking', (req, res) => {
     try {
-        const { type, booking, drivers, driver_ids, driver_id_list, status } = req.body;
+        const { type, booking, drivers, driver_ids, status } = req.body;
 
         const normalizedDrivers = Array.isArray(drivers)
             ? drivers
             : (Array.isArray(driver_ids) ? driver_ids : []);
 
-        const normalizedDriverIdList = Array.isArray(driver_id_list)
-            ? driver_id_list
-            : normalizedDrivers.map((driver) => driver?.id).filter((id) => id !== undefined && id !== null);
+        const deliverableDrivers = normalizedDrivers
+            .filter((driver) => driver?.id !== undefined && driver?.id !== null);
 
-        if (!booking || normalizedDrivers.length === 0) {
+        if (!booking || deliverableDrivers.length === 0) {
             return res.status(400).json({ error: 'Booking or driver_ids missing' });
         }
 
-        io.emit("newBooking", {
-            type,
-            booking,
-            drivers: normalizedDrivers,
-            driver_ids: normalizedDrivers,
-            driver_id_list: normalizedDriverIdList,
-            status
+        deliverableDrivers.forEach((driver) => {
+            const driverId = driver.id;
+            const { km, miles } = resolveDistanceForDriver(driver);
+
+            const driverPayload = {
+                id: driverId,
+                current_lat: driver?.current_lat ?? null,
+                current_lng: driver?.current_lng ?? null,
+                distance: km,
+                distance_km: km,
+                distance_miles: miles,
+            };
+
+            const bookingPayload = {
+                ...booking,
+                user_distance_km: km,
+                user_distance_miles: miles,
+            };
+
+            io.to(`driver_${driverId}`).emit("newBooking", {
+                type,
+                booking: bookingPayload,
+                driver_id: driverId,
+                driver: driverPayload,
+                drivers: [driverPayload],
+                selected_driver: driverPayload,
+                driver_ids: [driverPayload],
+                driver_id_list: [driverId],
+                status,
+                distance_km: km,
+                distance_miles: miles,
+                user_distance_km: km,
+                user_distance_miles: miles,
+            });
         });
 
-        console.log(`📢 Instant booking sent to ${normalizedDrivers.length} drivers`);
-        res.json({ success: true });
+        console.log(`📢 Instant booking sent to ${deliverableDrivers.length} drivers`);
+        res.json({ success: true, sent_to: deliverableDrivers.length });
 
     } catch (err) {
         console.error("❌ Error in /emit/new-instant-booking:", err.message);
@@ -396,13 +512,22 @@ app.post('/emit/new-instant-booking', (req, res) => {
 });
 app.post('/emit/driver-response', (req, res) => {
     try {
-        const { booking, driver, status } = req.body;
+        const { booking, driver, user, status, distance_km, distance_miles } = req.body;
 
         if (!booking || !driver || !status) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
-        io.emit(`driverResponse`, { booking, driver, status });
+        io.emit(`driverResponse`, {
+            booking,
+            driver,
+            user: user ?? null,
+            status,
+            distance_km: toFixedOrNull(distance_km),
+            distance_miles: toFixedOrNull(distance_miles),
+            user_distance_km: toFixedOrNull(distance_km),
+            user_distance_miles: toFixedOrNull(distance_miles),
+        });
         console.log(`📢 Driver ${booking.driver_id} responded with ${status} for booking ${booking.id}`);
 
         res.json({ success: true });
