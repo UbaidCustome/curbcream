@@ -1,9 +1,15 @@
 <?php
 
+use App\Http\Controllers\Admin\AccessControlController;
+use App\Http\Controllers\Admin\AnalyticsController;
 use App\Http\Controllers\Admin\AuthController;
 use App\Http\Controllers\Admin\BookingController;
+use App\Http\Controllers\Admin\CommunicationController;
+use App\Http\Controllers\Admin\ComplianceController;
+use App\Http\Controllers\Admin\ContentController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\LocationSettingsController;
 use App\Http\Controllers\Admin\ProviderController;
 use App\Http\Controllers\Admin\QuickActionController;
 use Illuminate\Support\Facades\Route;
@@ -44,6 +50,36 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('/disputes', [QuickActionController::class, 'disputes'])->name('disputes.index');
         Route::post('/disputes/{id}/resolve', [QuickActionController::class, 'resolveDispute'])->name('disputes.resolve');
+
+        Route::get('/location-settings', [LocationSettingsController::class, 'index'])->name('location.index');
+        Route::post('/location-settings', [LocationSettingsController::class, 'updateSettings'])->name('location.settings.update');
+        Route::post('/location-settings/regions', [LocationSettingsController::class, 'storeRegion'])->name('location.regions.store');
+        Route::put('/location-settings/regions/{id}', [LocationSettingsController::class, 'updateRegion'])->name('location.regions.update');
+        Route::post('/location-settings/regions/{id}/toggle', [LocationSettingsController::class, 'toggleRegion'])->name('location.regions.toggle');
+        Route::delete('/location-settings/regions/{id}', [LocationSettingsController::class, 'destroyRegion'])->name('location.regions.destroy');
+
+        Route::get('/communication', [CommunicationController::class, 'index'])->name('communication.index');
+        Route::post('/communication/notifications', [CommunicationController::class, 'sendNotification'])->name('communication.notifications.send');
+        Route::post('/communication/emails', [CommunicationController::class, 'sendEmail'])->name('communication.emails.send');
+        Route::post('/communication/automation', [CommunicationController::class, 'updateAutomation'])->name('communication.automation.update');
+
+        Route::get('/compliance', [ComplianceController::class, 'index'])->name('compliance.index');
+        Route::post('/compliance/reviews/{id}/flag', [ComplianceController::class, 'flagReview'])->name('compliance.reviews.flag');
+        Route::post('/compliance/reviews/{id}/remove', [ComplianceController::class, 'removeReview'])->name('compliance.reviews.remove');
+        Route::post('/compliance/reviews/{id}/respond', [ComplianceController::class, 'respondReview'])->name('compliance.reviews.respond');
+        Route::post('/compliance/users/{id}/ban', [ComplianceController::class, 'banUser'])->name('compliance.users.ban');
+        Route::post('/compliance/policies/{type}', [ComplianceController::class, 'updatePolicy'])->name('compliance.policies.update');
+
+        Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
+        Route::get('/analytics/export', [AnalyticsController::class, 'export'])->name('analytics.export');
+
+        Route::get('/access-control', [AccessControlController::class, 'index'])->name('access.index');
+        Route::post('/access-control/members', [AccessControlController::class, 'storeMember'])->name('access.members.store');
+        Route::put('/access-control/members/{id}', [AccessControlController::class, 'updateMember'])->name('access.members.update');
+        Route::post('/access-control/policies/{type}', [AccessControlController::class, 'updatePolicy'])->name('access.policies.update');
+
+        Route::get('/content', [ContentController::class, 'index'])->name('content.index');
+        Route::put('/content/{type}', [ContentController::class, 'update'])->name('content.update');
 
         Route::get('/listings', [QuickActionController::class, 'listings'])->name('listings.index');
         Route::post('/listings/{id}/toggle-featured', [QuickActionController::class, 'toggleFeatured'])->name('listings.toggle-featured');

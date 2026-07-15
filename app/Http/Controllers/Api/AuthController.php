@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\Product;
 use App\Models\Content;
 use App\Models\Booking;
+use App\Models\PlatformSetting;
 use App\Models\Review;
 use App\Models\Favourite;
 use App\Traits\ApiResponser;
@@ -511,7 +512,7 @@ class AuthController extends Controller
             
             $userLat = $request->lat;
             $userLng = $request->lng;
-            $maxDistance = $request->distance ?? 10; // km (default 10km)
+            $maxDistance = $request->distance ?? PlatformSetting::maxServiceDistanceKm(5);
             $minRating = $request->rating ?? 0;      // minimum rating (default 0)
     
             $query = User::where([

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\LoginActivity;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -29,17 +30,33 @@ class AuthController extends Controller
         $user = User::where('email', $credentials['email'])->where('role', 'admin')->first();
 
         if (!$user || !Hash::check($credentials['password'], $user->password)) {
+            $this->logLogin($request, null, $credentials['email'], 'failed', 'Invalid admin credentials');
             return back()->withInput($request->only('email'))->with('error', 'Invalid admin credentials.');
         }
 
         if ($user->is_banned) {
+            $this->logLogin($request, $user->id, $user->email, 'unauthorized', 'Banned admin account');
             return back()->with('error', 'This admin account has been banned.');
         }
 
         Auth::login($user, $request->boolean('remember'));
         $request->session()->regenerate();
+        $this->logLogin($request, $user->id, $user->email, 'success', 'Login successful');
 
         return redirect()->route('admin.dashboard')->with('success', 'Login successful.');
+    }
+
+    private function logLogin(Request $request, ?int $userId, ?string $email, string $status, string $message): void
+    {
+        LoginActivity::create([
+            'user_id' => $userId,
+            'email' => $email,
+            'guard' => 'admin',
+            'status' => $status,
+            'ip_address' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 1000),
+            'message' => $message,
+        ]);
     }
 
     public function showForgotPassword()

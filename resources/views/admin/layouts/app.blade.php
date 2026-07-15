@@ -33,6 +33,24 @@
                 <a href="{{ route('admin.disputes.index') }}" class="{{ request()->routeIs('admin.disputes.*') ? 'active' : '' }}">
                     <i class="bi bi-exclamation-triangle"></i> Disputes
                 </a>
+                <a href="{{ route('admin.location.index') }}" class="{{ request()->routeIs('admin.location.*') ? 'active' : '' }}">
+                    <i class="bi bi-geo-alt"></i> Location
+                </a>
+                <a href="{{ route('admin.communication.index') }}" class="{{ request()->routeIs('admin.communication.*') ? 'active' : '' }}">
+                    <i class="bi bi-bell"></i> Communication
+                </a>
+                <a href="{{ route('admin.compliance.index') }}" class="{{ request()->routeIs('admin.compliance.*') ? 'active' : '' }}">
+                    <i class="bi bi-shield-check"></i> Compliance
+                </a>
+                <a href="{{ route('admin.analytics.index') }}" class="{{ request()->routeIs('admin.analytics.*') ? 'active' : '' }}">
+                    <i class="bi bi-graph-up"></i> Analytics
+                </a>
+                <a href="{{ route('admin.access.index') }}" class="{{ request()->routeIs('admin.access.*') ? 'active' : '' }}">
+                    <i class="bi bi-key"></i> Access
+                </a>
+                <a href="{{ route('admin.content.index') }}" class="{{ request()->routeIs('admin.content.*') ? 'active' : '' }}">
+                    <i class="bi bi-file-earmark-text"></i> Content
+                </a>
                 <!-- <a href="{{ route('admin.listings.index') }}" class="{{ request()->routeIs('admin.listings.*') ? 'active' : '' }}">
                     <i class="bi bi-star"></i> Featured Listings
                 </a> -->
@@ -40,24 +58,33 @@
                     <i class="bi bi-credit-card"></i> Subscription Plans
                 </a> -->
             </nav>
-            <div class="sidebar-footer">
-                <div class="small mb-2">{{ auth()->user()->name ?? 'Admin' }}</div>
-                <div class="text-white-50 small mb-3">{{ auth()->user()->email ?? '' }}</div>
-                <form action="{{ route('admin.logout') }}" method="POST" class="js-action-form">
-                    @csrf
-                    <button type="submit" class="btn btn-danger w-100 btn-action">
-                        <span class="btn-label"><i class="bi bi-box-arrow-right"></i> Logout</span>
-                        <span class="btn-loader d-none"><span class="spinner-border spinner-border-sm"></span> Logging out...</span>
-                    </button>
-                </form>
-            </div>
         </aside>
 
         <main class="admin-main">
-            <div class="d-flex justify-content-between align-items-center mb-3 d-lg-none">
-                <button class="btn btn-dark" type="button" id="sidebarToggle"><i class="bi bi-list"></i> Menu</button>
+            <header class="admin-header">
+                <div class="admin-header-left">
+                    <button class="btn btn-dark d-lg-none" type="button" id="sidebarToggle">
+                        <i class="bi bi-list"></i> Menu
+                    </button>
+                    <div class="admin-header-title d-none d-lg-block">@yield('title', 'Admin')</div>
+                </div>
+                <div class="admin-header-user">
+                    <div class="admin-user-meta">
+                        <div class="admin-user-name">{{ auth()->user()->name ?? 'Admin' }}</div>
+                        <div class="admin-user-email">{{ auth()->user()->email ?? '' }}</div>
+                    </div>
+                    <form action="{{ route('admin.logout') }}" method="POST" class="js-action-form">
+                        @csrf
+                        <button type="submit" class="btn btn-danger btn-action">
+                            <span class="btn-label"><i class="bi bi-box-arrow-right"></i> Logout</span>
+                            <span class="btn-loader d-none"><span class="spinner-border spinner-border-sm"></span></span>
+                        </button>
+                    </form>
+                </div>
+            </header>
+            <div class="admin-content">
+                @yield('content')
             </div>
-            @yield('content')
         </main>
     </div>
 

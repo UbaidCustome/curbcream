@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingRequest;
 use App\Models\Notification;
+use App\Models\PlatformSetting;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -58,7 +59,7 @@ class BookingController extends Controller
             //     ], 422);
             // }
     
-            $radius = 5; // km
+            $radius = PlatformSetting::maxServiceDistanceKm(5);
             $pickupLat = (float) $request->lat;
             $pickupLng = (float) $request->lng;
 
@@ -250,11 +251,10 @@ class BookingController extends Controller
                 'lng' => 'required|numeric',
             ]);
     
-            $radius = 5; // km
+            $radius = PlatformSetting::maxServiceDistanceKm(5);
             $pickupLat = (float) $request->lat;
             $pickupLng = (float) $request->lng;
 
-            // ✅ Find nearby drivers (5km radius)
             $drivers = $this->getNearbyDrivers($pickupLat, $pickupLng, $radius);
 
             $drivers = $this->formatDriverDistancePayload($drivers);
@@ -553,8 +553,10 @@ class BookingController extends Controller
         return number_format($distance, 2, '.', ''); // ✅ Always return "xx.xx"
     }
 
-    private function getNearbyDrivers(float $pickupLat, float $pickupLng, float $radius = 5, int $freshWindowMinutes = 10)
+    private function getNearbyDrivers(float $pickupLat, float $pickupLng, ?float $radius = null, int $freshWindowMinutes = 10)
     {
+        $radius = $radius ?? PlatformSetting::maxServiceDistanceKm(5);
+
         $distanceSql = "CAST(ROUND(6371 * acos(LEAST(1, GREATEST(-1,
             cos(radians($pickupLat))
             * cos(radians(current_lat))

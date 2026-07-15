@@ -24,6 +24,7 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'admin_access_level',
         'otp',
         'otp_expires_at',
         'first_name',
