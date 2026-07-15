@@ -186,6 +186,42 @@ body {
     color: #fff;
 }
 
+.pagination {
+    margin: 0;
+    gap: .35rem;
+    flex-wrap: wrap;
+}
+
+.pagination .page-link {
+    border-radius: .65rem !important;
+    border: 1px solid rgba(11, 31, 51, 0.12);
+    color: var(--cc-navy);
+    min-width: 2.25rem;
+    height: 2.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 .65rem;
+    font-size: .9rem;
+    font-weight: 600;
+}
+
+.pagination .page-link svg {
+    width: 14px !important;
+    height: 14px !important;
+}
+
+.pagination .page-item.active .page-link {
+    background: linear-gradient(135deg, var(--cc-mint), var(--cc-mint-dark));
+    border-color: transparent;
+    color: #fff;
+}
+
+.pagination .page-item.disabled .page-link {
+    opacity: .45;
+    background: #f5f7f8;
+}
+
 @media (max-width: 991px) {
     .admin-shell { grid-template-columns: 1fr; }
     .admin-sidebar {
