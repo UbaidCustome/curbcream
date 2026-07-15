@@ -47,7 +47,13 @@ class User extends Authenticatable
         'profile_completed',
         'is_active',
         'is_notification',
-        'status'        
+        'status',
+        'document_status',
+        'admin_notes',
+        'subscription_plan',
+        'subscription_status',
+        'subscription_expires_at',
+        'is_banned',
     ];
 
     /**
@@ -70,6 +76,10 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'subscription_expires_at' => 'datetime',
+            'is_banned' => 'boolean',
+            'is_active' => 'boolean',
+            'is_notification' => 'boolean',
         ];
     }
     public function products()

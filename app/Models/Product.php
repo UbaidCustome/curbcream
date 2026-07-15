@@ -10,11 +10,12 @@ class Product extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name', 'price', 'images', 'user_id',
+        'name', 'price', 'images', 'user_id', 'is_featured',
     ];
 
     protected $casts = [
         'images' => 'array',
+        'is_featured' => 'boolean',
     ];
 
     public function user()
