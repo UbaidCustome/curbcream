@@ -1,4 +1,6 @@
 window.AdminUI = {
+    busy: false,
+
     toast(message, type = 'success') {
         const stack = document.getElementById('toast-stack');
         if (!stack || !message) return;
@@ -22,17 +24,30 @@ window.AdminUI = {
             label.classList.toggle('d-none', loading);
             loader.classList.toggle('d-none', !loading);
         }
+    },
+
+    lockAllActions(activeBtn) {
+        this.busy = true;
+        document.querySelectorAll('.js-action-form button, .btn-action').forEach((btn) => {
+            btn.disabled = true;
+        });
+        if (activeBtn) {
+            this.setLoading(activeBtn, true);
+            activeBtn.disabled = true;
+        }
     }
 };
 
 document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.js-action-form').forEach((form) => {
         form.addEventListener('submit', function (event) {
+            if (AdminUI.busy) {
+                event.preventDefault();
+                return;
+            }
+
             const submitter = event.submitter || form.querySelector('.btn-action') || form.querySelector('button[type="submit"]');
-            AdminUI.setLoading(submitter, true);
-            form.querySelectorAll('button').forEach((btn) => {
-                if (btn !== submitter) btn.disabled = true;
-            });
+            AdminUI.lockAllActions(submitter);
         });
     });
 

@@ -64,16 +64,18 @@
                             <td>
                                 <div class="d-flex gap-1 flex-wrap">
                                     <a href="{{ route('admin.providers.show', $provider->id) }}" class="btn btn-sm btn-outline-secondary">View</a>
-                                    <form action="{{ route('admin.providers.document-status', $provider->id) }}" method="POST" class="js-action-form">
-                                        @csrf
-                                        <input type="hidden" name="document_status" value="approved">
-                                        <button class="btn btn-sm btn-success btn-action"><span class="btn-label">Approve</span><span class="btn-loader d-none"><span class="spinner-border spinner-border-sm"></span></span></button>
-                                    </form>
-                                    <form action="{{ route('admin.providers.document-status', $provider->id) }}" method="POST" class="js-action-form">
-                                        @csrf
-                                        <input type="hidden" name="document_status" value="rejected">
-                                        <button class="btn btn-sm btn-danger btn-action"><span class="btn-label">Reject</span><span class="btn-loader d-none"><span class="spinner-border spinner-border-sm"></span></span></button>
-                                    </form>
+                                    @if(in_array($provider->document_status ?? 'pending', ['pending', 'more_info'], true))
+                                        <form action="{{ route('admin.providers.document-status', $provider->id) }}" method="POST" class="js-action-form">
+                                            @csrf
+                                            <input type="hidden" name="document_status" value="approved">
+                                            <button class="btn btn-sm btn-success btn-action"><span class="btn-label">Approve</span><span class="btn-loader d-none"><span class="spinner-border spinner-border-sm"></span></span></button>
+                                        </form>
+                                        <form action="{{ route('admin.providers.document-status', $provider->id) }}" method="POST" class="js-action-form">
+                                            @csrf
+                                            <input type="hidden" name="document_status" value="rejected">
+                                            <button class="btn btn-sm btn-danger btn-action"><span class="btn-label">Reject</span><span class="btn-loader d-none"><span class="spinner-border spinner-border-sm"></span></span></button>
+                                        </form>
+                                    @endif
                                     <form action="{{ route('admin.providers.toggle-status', $provider->id) }}" method="POST" class="js-action-form">
                                         @csrf
                                         <button class="btn btn-sm btn-outline-primary btn-action"><span class="btn-label">{{ $provider->is_active ? 'Suspend' : 'Unsuspend' }}</span><span class="btn-loader d-none"><span class="spinner-border spinner-border-sm"></span></span></button>
